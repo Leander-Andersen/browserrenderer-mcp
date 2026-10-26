@@ -1,6 +1,6 @@
 #!/bin/sh
 # Add Cloudflare's official apt repository and install cloudflared.
-# Run as root on Debian/Ubuntu. Does not configure any tunnel or token.
+# Run as root on Debian/Ubuntu. Installs a token-file unit; never handles the token.
 set -eu
 [ "$(id -u)" -eq 0 ] || { echo "Run as root." >&2; exit 1; }
 apt-get update
@@ -13,3 +13,11 @@ echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudf
 apt-get update
 apt-get install -y cloudflared
 cloudflared --version
+
+# Token lives in a root-only file, never on the command line (see README).
+install -d -m 0700 /etc/cloudflared
+install -m 0644 "$(dirname "$0")/cloudflared-tunnel.service" /etc/systemd/system/cloudflared-tunnel.service
+systemctl daemon-reload
+systemctl enable cloudflared-tunnel.service
+echo "Now write the tunnel token to /etc/cloudflared/token (mode 0600), then:"
+echo "  systemctl start cloudflared-tunnel"

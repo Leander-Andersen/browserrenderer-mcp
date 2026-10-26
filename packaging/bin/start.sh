@@ -45,7 +45,8 @@ set -- --headless --browser chromium \
   --host 127.0.0.1 --port "$PORT" \
   --allowed-hosts "$HOST_NAME" \
   --output-dir "$DATA_DIR/output" \
-  --viewport-size "$VIEWPORT"
+  --viewport-size "$VIEWPORT" \
+  --no-webmcp
 if [ "$MODE" = persistent ]; then
   set -- "$@" --user-data-dir "$DATA_DIR/profile"
 else

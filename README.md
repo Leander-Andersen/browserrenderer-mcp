@@ -21,7 +21,11 @@ last git commit.
 
 Without dpkg: `./install.sh` (root, from a checkout). To expose it through
 Cloudflare, `scripts/install-cloudflared.sh` adds the official apt repo and installs
-`cloudflared` (tunnel setup is yours).
+`cloudflared`, plus `cloudflared-tunnel.service`, which reads the token from
+`/etc/cloudflared/token` (root, 0600). Don't use `cloudflared service install <token>`:
+it puts the token in the process cmdline. `browser_run_code_unsafe` is always on
+upstream (RCE-equivalent), so the MCP unit hides other processes and `/etc/cloudflared`.
+WebMCP page tools are off (`--no-webmcp`).
 
 ## Configure
 

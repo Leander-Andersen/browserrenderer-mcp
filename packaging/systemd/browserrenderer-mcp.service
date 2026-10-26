@@ -35,6 +35,10 @@ RestrictRealtime=yes
 LockPersonality=yes
 CapabilityBoundingSet=
 UMask=0027
+# browser_run_code_unsafe can't be disabled upstream: keep the tunnel token
+# (cloudflared cmdline, /etc/cloudflared) out of reach of this service.
+ProtectProc=invisible
+InaccessiblePaths=-/etc/cloudflared
 
 [Install]
 WantedBy=multi-user.target
