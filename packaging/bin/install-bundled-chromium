@@ -1,0 +1,27 @@
+#!/bin/sh
+# Fallback: install the Chromium that matches the vendored Playwright (plus OS
+# deps) into /var/lib/browserrenderer-mcp/ms-playwright. Run as root.
+set -eu
+APP_DIR="${BRMCP_APP_DIR:-/opt/browserrenderer-mcp}"
+DATA_DIR="${BRMCP_DATA_DIR:-/var/lib/browserrenderer-mcp}"
+[ "$(id -u)" -eq 0 ] || { echo "Run as root." >&2; exit 1; }
+
+PLAYWRIGHT_BROWSERS_PATH="$DATA_DIR/ms-playwright"
+export PLAYWRIGHT_BROWSERS_PATH
+unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+
+node "$APP_DIR/node_modules/playwright/cli.js" install --with-deps chromium
+
+if id browserrenderer >/dev/null 2>&1; then
+  chown -R browserrenderer:browserrenderer "$PLAYWRIGHT_BROWSERS_PATH"
+fi
+
+EXE=$(node -e "
+process.env.PLAYWRIGHT_BROWSERS_PATH=process.argv[1];
+console.log(require(process.argv[2]+'/node_modules/playwright-core').chromium.executablePath());
+" "$PLAYWRIGHT_BROWSERS_PATH" "$APP_DIR")
+echo
+echo "Bundled Chromium installed. Set this in /etc/browserrenderer-mcp/browserrenderer-mcp.env:"
+echo "  BRMCP_EXECUTABLE_PATH=$EXE"
+echo "then: systemctl restart browserrenderer-mcp"

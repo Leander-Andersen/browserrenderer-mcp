@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove)
+    if [ -d /run/systemd/system ]; then
+      systemctl stop browserrenderer-mcp.service || true
+    fi
+    systemctl disable browserrenderer-mcp.service >/dev/null 2>&1 || true
+    ;;
+  upgrade|deconfigure|failed-upgrade)
+    ;;
+  *)
+    echo "prerm called with unknown argument '$1'" >&2
+    exit 1
+    ;;
+esac
+exit 0

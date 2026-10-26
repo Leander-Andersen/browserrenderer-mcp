@@ -1,0 +1,9 @@
+{
+  "name": "browserrenderer-mcp-vendor",
+  "version": "0.0.83",
+  "private": true,
+  "description": "Vendored stock @playwright/mcp for the browserrenderer-mcp package",
+  "dependencies": {
+    "@playwright/mcp": "0.0.83"
+  }
+}

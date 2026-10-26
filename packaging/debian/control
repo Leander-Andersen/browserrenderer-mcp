@@ -1,0 +1,12 @@
+Package: browserrenderer-mcp
+Version: @VERSION@
+Architecture: all
+Maintainer: browserrenderer-mcp maintainers <root@localhost>
+Depends: nodejs (>= 18), chromium, fonts-liberation, ca-certificates, adduser, systemd
+Section: web
+Priority: optional
+Homepage: https://github.com/microsoft/playwright-mcp
+Description: Headless browser rendering over MCP (stock @playwright/mcp)
+ Runs Microsoft's unmodified @playwright/mcp as a systemd service, bound to
+ 127.0.0.1 with a mandatory allowed-hosts check, intended to sit behind a
+ reverse proxy or tunnel. Contains no custom MCP code.

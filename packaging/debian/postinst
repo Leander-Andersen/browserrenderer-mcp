@@ -1,0 +1,41 @@
+#!/bin/sh
+set -e
+D=/var/lib/browserrenderer-mcp
+ENVF=/etc/browserrenderer-mcp/browserrenderer-mcp.env
+
+case "$1" in
+  configure)
+    if ! getent group browserrenderer >/dev/null; then
+      addgroup --system browserrenderer >/dev/null
+    fi
+    if ! getent passwd browserrenderer >/dev/null; then
+      adduser --system --ingroup browserrenderer --home "$D" --no-create-home \
+        --shell /usr/sbin/nologin --gecos "browserrenderer-mcp" browserrenderer >/dev/null
+    fi
+    mkdir -p "$D" "$D/output" "$D/profile"
+    chown browserrenderer:browserrenderer "$D" "$D/output" "$D/profile"
+    chmod 0750 "$D" "$D/output" "$D/profile"
+
+    if [ -d /run/systemd/system ]; then
+      systemctl daemon-reload || true
+    fi
+    systemctl enable browserrenderer-mcp.service >/dev/null 2>&1 || true
+
+    host=$(sed -n 's/^BRMCP_HOSTNAME=//p' "$ENVF" 2>/dev/null | tail -n 1 | tr -d ' "'"'" )
+    if [ -z "$host" ]; then
+      echo "browserrenderer-mcp: BRMCP_HOSTNAME is not set." >&2
+      echo "  Edit $ENVF, set BRMCP_HOSTNAME, then run:" >&2
+      echo "  systemctl restart browserrenderer-mcp" >&2
+    elif [ -d /run/systemd/system ]; then
+      systemctl restart browserrenderer-mcp.service || \
+        echo "browserrenderer-mcp: service failed to start; see journalctl -u browserrenderer-mcp" >&2
+    fi
+    ;;
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+  *)
+    echo "postinst called with unknown argument '$1'" >&2
+    exit 1
+    ;;
+esac
+exit 0
