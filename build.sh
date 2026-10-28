@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 ROOT=$(pwd)
 UPSTREAM=$(node -p "require('./package.json').dependencies['@playwright/mcp']")
-REVISION=1
+REVISION=2
 VERSION="$UPSTREAM-$REVISION"
 DEB="dist/browserrenderer-mcp_${VERSION}_all.deb"
 

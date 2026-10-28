@@ -5,6 +5,7 @@ set -eu
 APP_DIR="${BRMCP_APP_DIR:-/opt/browserrenderer-mcp}"
 DATA_DIR="${BRMCP_DATA_DIR:-/var/lib/browserrenderer-mcp}"
 
+BIND="${BRMCP_BIND:-127.0.0.1}"
 PORT="${BRMCP_PORT:-8931}"
 HOST_NAME="${BRMCP_HOSTNAME:-}"
 MODE="${BRMCP_PROFILE_MODE:-isolated}"
@@ -24,6 +25,9 @@ case "$MODE" in
   persistent|isolated) ;;
   *) die "BRMCP_PROFILE_MODE must be 'persistent' or 'isolated' (got '$MODE')." ;;
 esac
+case "$BIND" in
+  *[!0-9.]*|'') die "BRMCP_BIND must be an IPv4 address (got '$BIND')." ;;
+esac
 case "$PORT" in
   ''|*[!0-9]*) die "BRMCP_PORT must be a number." ;;
 esac
@@ -42,7 +46,7 @@ export HOME="${HOME:-$DATA_DIR}"
 
 # Build argv safely: $@ holds the fixed args; EXTRA is intentionally word-split.
 set -- --headless --browser chromium \
-  --host 127.0.0.1 --port "$PORT" \
+  --host "$BIND" --port "$PORT" \
   --allowed-hosts "$HOST_NAME" \
   --output-dir "$DATA_DIR/output" \
   --viewport-size "$VIEWPORT" \

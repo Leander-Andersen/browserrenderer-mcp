@@ -33,7 +33,9 @@ Edit `/etc/browserrenderer-mcp/browserrenderer-mcp.env`, then
 `systemctl restart browserrenderer-mcp`. `BRMCP_HOSTNAME` (the public hostname,
 used for `--allowed-hosts`) is required: the service refuses to start without it.
 Other options: port, `isolated|persistent` profile, browser path, sandbox toggle,
-viewport, extra flags. The listen address is always `127.0.0.1`.
+viewport, extra flags, listen address. The listen address defaults to `127.0.0.1`;
+set `BRMCP_BIND=0.0.0.0` only when the tunnel connector runs on another host, and
+firewall the port so only that host can connect.
 
 ## Update
 
