@@ -12,6 +12,7 @@ MODE="${BRMCP_PROFILE_MODE:-isolated}"
 EXE="${BRMCP_EXECUTABLE_PATH:-}"
 NOSANDBOX="${BRMCP_NO_SANDBOX:-0}"
 VIEWPORT="${BRMCP_VIEWPORT:-1440x900}"
+NAV_TIMEOUT="${BRMCP_NAV_TIMEOUT:-30000}"
 EXTRA="${BRMCP_EXTRA_ARGS:-}"
 
 die() { echo "browserrenderer-mcp: ERROR: $*" >&2; exit 78; }
@@ -30,6 +31,9 @@ case "$BIND" in
 esac
 case "$PORT" in
   ''|*[!0-9]*) die "BRMCP_PORT must be a number." ;;
+esac
+case "$NAV_TIMEOUT" in
+  ''|*[!0-9]*) die "BRMCP_NAV_TIMEOUT must be milliseconds (got '$NAV_TIMEOUT')." ;;
 esac
 case "$NOSANDBOX" in 0|1) ;; *) die "BRMCP_NO_SANDBOX must be 0 or 1." ;; esac
 VIEWPORT=$(printf '%s' "$VIEWPORT" | tr ',' 'x')
@@ -50,6 +54,7 @@ set -- --headless --browser chromium \
   --allowed-hosts "$HOST_NAME" \
   --output-dir "$DATA_DIR/output" \
   --viewport-size "$VIEWPORT" \
+  --timeout-navigation "$NAV_TIMEOUT" \
   --no-webmcp
 if [ "$MODE" = persistent ]; then
   set -- "$@" --user-data-dir "$DATA_DIR/profile"

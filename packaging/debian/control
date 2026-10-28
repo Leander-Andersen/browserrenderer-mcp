@@ -3,6 +3,7 @@ Version: @VERSION@
 Architecture: all
 Maintainer: browserrenderer-mcp maintainers <root@localhost>
 Depends: nodejs (>= 18), chromium, fonts-liberation, ca-certificates, adduser, systemd
+Recommends: fonts-noto-core, fonts-noto-cjk
 Section: web
 Priority: optional
 Homepage: https://github.com/microsoft/playwright-mcp
