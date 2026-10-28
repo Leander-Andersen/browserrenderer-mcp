@@ -61,5 +61,6 @@ the matching Chromium (with OS deps) via the vendored Playwright CLI into
   (they do not cover redirects), so they are not used here.
 - `--allowed-hosts` protects the MCP endpoint against Host-header/DNS-rebinding
   attacks; authentication (e.g. Cloudflare Access) must be done in front of it.
-- If the Chromium sandbox cannot start in your container, set `BRMCP_NO_SANDBOX=1`;
+- The Chromium sandbox is on (`--sandbox`; Playwright's own default is off). It needs
+  user namespaces. If Chromium cannot start sandboxed in your container, set `BRMCP_NO_SANDBOX=1`;
   that weakens isolation from hostile web pages, so rely on the container boundary.

@@ -57,7 +57,8 @@ else
   set -- "$@" --isolated
 fi
 [ -z "$EXE" ] || set -- "$@" --executable-path "$EXE"
-[ "$NOSANDBOX" != 1 ] || set -- "$@" --no-sandbox
+# Playwright disables the Chromium sandbox unless asked, so ask explicitly.
+if [ "$NOSANDBOX" = 1 ]; then set -- "$@" --no-sandbox; else set -- "$@" --sandbox; fi
 if [ -n "$EXTRA" ]; then
   # shellcheck disable=SC2086
   set -- "$@" $EXTRA

@@ -35,6 +35,8 @@ RestrictRealtime=yes
 LockPersonality=yes
 CapabilityBoundingSet=
 UMask=0027
+# Many tabs could otherwise fill the container; only this service gets killed.
+MemoryMax=3G
 # browser_run_code_unsafe can't be disabled upstream: keep the tunnel token
 # (cloudflared cmdline, /etc/cloudflared) out of reach of this service.
 ProtectProc=invisible
