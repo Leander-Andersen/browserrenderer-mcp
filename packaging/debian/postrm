@@ -2,12 +2,18 @@
 set -e
 case "$1" in
   purge)
-    rm -rf /var/lib/browserrenderer-mcp
+    rm -rf /var/lib/browserrenderer-mcp /var/lib/browserrenderer-gateway
     if getent passwd browserrenderer >/dev/null; then
       deluser --system browserrenderer >/dev/null 2>&1 || true
     fi
     if getent group browserrenderer >/dev/null; then
       delgroup --system browserrenderer >/dev/null 2>&1 || true
+    fi
+    if getent passwd brgateway >/dev/null; then
+      deluser --system brgateway >/dev/null 2>&1 || true
+    fi
+    if getent group brgateway >/dev/null; then
+      delgroup --system brgateway >/dev/null 2>&1 || true
     fi
     rmdir /etc/browserrenderer-mcp 2>/dev/null || true
     if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi

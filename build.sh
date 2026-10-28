@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 ROOT=$(pwd)
 UPSTREAM=$(node -p "require('./package.json').dependencies['@playwright/mcp']")
-REVISION=4
+REVISION=5
 VERSION="$UPSTREAM-$REVISION"
 DEB="dist/browserrenderer-mcp_${VERSION}_all.deb"
 
@@ -14,15 +14,16 @@ export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 STAGE="$ROOT/staging"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/opt/browserrenderer-mcp/bin" "$STAGE/etc/browserrenderer-mcp" \
+mkdir -p "$STAGE/opt/browserrenderer-mcp/bin" "$STAGE/opt/browserrenderer-mcp/gateway" "$STAGE/etc/browserrenderer-mcp" \
   "$STAGE/lib/systemd/system" "$STAGE/DEBIAN" "$STAGE/usr/share/doc/browserrenderer-mcp"
 
 APP="$STAGE/opt/browserrenderer-mcp"
 cp package.json package-lock.json "$APP/"
 (cd "$APP" && npm ci --omit=dev --no-audit --no-fund --ignore-scripts)
 cp packaging/bin/start.sh packaging/bin/install-bundled-chromium "$APP/bin/"
-cp packaging/etc/browserrenderer-mcp.env "$STAGE/etc/browserrenderer-mcp/"
-cp packaging/systemd/browserrenderer-mcp.service "$STAGE/lib/systemd/system/"
+cp gateway/*.mjs "$APP/gateway/"
+cp packaging/etc/browserrenderer-mcp.env packaging/etc/notify.env "$STAGE/etc/browserrenderer-mcp/"
+cp packaging/systemd/browserrenderer-mcp.service packaging/systemd/browserrenderer-gateway.service "$STAGE/lib/systemd/system/"
 cp README.md "$STAGE/usr/share/doc/browserrenderer-mcp/"
 sed "s/@VERSION@/$VERSION/" packaging/debian/control > "$STAGE/DEBIAN/control"
 cp packaging/debian/conffiles packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm "$STAGE/DEBIAN/"
@@ -38,6 +39,7 @@ find "$STAGE" -type d -exec chmod 0755 {} +
 find "$STAGE" -type f -exec chmod 0644 {} +
 chmod 0755 "$APP/bin/start.sh" "$APP/bin/install-bundled-chromium" \
   "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/prerm" "$STAGE/DEBIAN/postrm"
+chmod 0640 "$STAGE/etc/browserrenderer-mcp/notify.env"
 for f in "$APP"/node_modules/.bin/*; do [ -e "$f" ] && chmod 0755 "$f" || true; done
 find "$STAGE" -exec touch -h -d "@$SDE" {} +
 

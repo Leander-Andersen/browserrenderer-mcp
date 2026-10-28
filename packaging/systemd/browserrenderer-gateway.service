@@ -1,0 +1,49 @@
+[Unit]
+Description=Browser renderer MCP gateway (public endpoint: proxy + watchlist + email alerts)
+Documentation=file:///usr/share/doc/browserrenderer-mcp/README.md
+After=network-online.target browserrenderer-mcp.service
+Wants=network-online.target
+Requires=browserrenderer-mcp.service
+
+[Service]
+Type=simple
+User=brgateway
+Group=brgateway
+EnvironmentFile=/etc/browserrenderer-mcp/browserrenderer-mcp.env
+# SMTP credentials: only this unit loads them (file is root:brgateway 0640).
+EnvironmentFile=-/etc/browserrenderer-mcp/notify.env
+Environment=HOME=/var/lib/browserrenderer-gateway
+WorkingDirectory=/var/lib/browserrenderer-gateway
+ExecStart=/usr/bin/node /opt/browserrenderer-mcp/gateway/server.mjs
+Restart=on-failure
+RestartSec=5
+# Config errors (exit 78) are not fixed by retrying.
+RestartPreventExitStatus=78
+
+# Hardening (no browser here, so stricter than the backend unit).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/browserrenderer-gateway
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0027
+MemoryMax=512M
+ProtectProc=invisible
+InaccessiblePaths=-/etc/cloudflared
+
+[Install]
+WantedBy=multi-user.target

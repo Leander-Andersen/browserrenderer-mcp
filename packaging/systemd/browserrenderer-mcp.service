@@ -1,5 +1,5 @@
 [Unit]
-Description=Browser renderer MCP server (stock @playwright/mcp)
+Description=Browser renderer MCP backend (stock @playwright/mcp, loopback only)
 Documentation=file:///usr/share/doc/browserrenderer-mcp/README.md
 After=network-online.target
 Wants=network-online.target

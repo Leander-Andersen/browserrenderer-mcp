@@ -1,5 +1,6 @@
 #!/bin/sh
-# Launcher for browserrenderer-mcp: stock @playwright/mcp, fail-closed config.
+# Launcher for the upstream half of browserrenderer-mcp: stock @playwright/mcp,
+# loopback only, fail-closed config. The public endpoint is the gateway.
 set -eu
 
 APP_DIR="${BRMCP_APP_DIR:-/opt/browserrenderer-mcp}"
@@ -7,6 +8,7 @@ DATA_DIR="${BRMCP_DATA_DIR:-/var/lib/browserrenderer-mcp}"
 
 BIND="${BRMCP_BIND:-127.0.0.1}"
 PORT="${BRMCP_PORT:-8931}"
+UPSTREAM_PORT="${BRMCP_UPSTREAM_PORT:-8932}"
 HOST_NAME="${BRMCP_HOSTNAME:-}"
 MODE="${BRMCP_PROFILE_MODE:-isolated}"
 EXE="${BRMCP_EXECUTABLE_PATH:-}"
@@ -17,6 +19,8 @@ EXTRA="${BRMCP_EXTRA_ARGS:-}"
 
 die() { echo "browserrenderer-mcp: ERROR: $*" >&2; exit 78; }
 
+# BRMCP_HOSTNAME is enforced by the gateway (public side); required here too so a
+# half-configured install fails closed instead of running only the upstream.
 [ -n "$HOST_NAME" ] || die "BRMCP_HOSTNAME is empty. Set it in /etc/browserrenderer-mcp/browserrenderer-mcp.env and restart."
 case "$HOST_NAME" in
   *'*'*) die "BRMCP_HOSTNAME must not contain '*'." ;;
@@ -32,6 +36,10 @@ esac
 case "$PORT" in
   ''|*[!0-9]*) die "BRMCP_PORT must be a number." ;;
 esac
+case "$UPSTREAM_PORT" in
+  ''|*[!0-9]*) die "BRMCP_UPSTREAM_PORT must be a number." ;;
+esac
+[ "$UPSTREAM_PORT" != "$PORT" ] || die "BRMCP_UPSTREAM_PORT must differ from BRMCP_PORT."
 case "$NAV_TIMEOUT" in
   ''|*[!0-9]*) die "BRMCP_NAV_TIMEOUT must be milliseconds (got '$NAV_TIMEOUT')." ;;
 esac
@@ -50,8 +58,8 @@ export HOME="${HOME:-$DATA_DIR}"
 
 # Build argv safely: $@ holds the fixed args; EXTRA is intentionally word-split.
 set -- --headless --browser chromium \
-  --host "$BIND" --port "$PORT" \
-  --allowed-hosts "$HOST_NAME" \
+  --host 127.0.0.1 --port "$UPSTREAM_PORT" \
+  --allowed-hosts "127.0.0.1:$UPSTREAM_PORT" \
   --output-dir "$DATA_DIR/output" \
   --viewport-size "$VIEWPORT" \
   --timeout-navigation "$NAV_TIMEOUT" \

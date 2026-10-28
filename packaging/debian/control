@@ -7,7 +7,10 @@ Recommends: fonts-noto-core, fonts-noto-cjk
 Section: web
 Priority: optional
 Homepage: https://github.com/microsoft/playwright-mcp
-Description: Headless browser rendering over MCP (stock @playwright/mcp)
- Runs Microsoft's unmodified @playwright/mcp as a systemd service, bound to
- 127.0.0.1 with a mandatory allowed-hosts check, intended to sit behind a
- reverse proxy or tunnel. Contains no custom MCP code.
+Description: Headless browser rendering over MCP with watchlist and email alerts
+ Runs Microsoft's unmodified @playwright/mcp as a hardened loopback-only systemd
+ service, and a small gateway service that is the public MCP endpoint. The
+ gateway proxies every browser tool of the stock server unchanged and adds
+ watchlist and email-alert tools. SMTP credentials live only in the gateway
+ process, never in the browser process. Intended to sit behind a tunnel or
+ reverse proxy that provides authentication.

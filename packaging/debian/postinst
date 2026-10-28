@@ -1,7 +1,9 @@
 #!/bin/sh
 set -e
 D=/var/lib/browserrenderer-mcp
+G=/var/lib/browserrenderer-gateway
 ENVF=/etc/browserrenderer-mcp/browserrenderer-mcp.env
+NOTIFY=/etc/browserrenderer-mcp/notify.env
 
 case "$1" in
   configure)
@@ -16,19 +18,38 @@ case "$1" in
     chown browserrenderer:browserrenderer "$D" "$D/output" "$D/profile"
     chmod 0750 "$D" "$D/output" "$D/profile"
 
+    # Gateway: separate user so SMTP credentials are unreachable from the browser.
+    if ! getent group brgateway >/dev/null; then
+      addgroup --system brgateway >/dev/null
+    fi
+    if ! getent passwd brgateway >/dev/null; then
+      adduser --system --ingroup brgateway --home "$G" --no-create-home \
+        --shell /usr/sbin/nologin --gecos "browserrenderer-gateway" brgateway >/dev/null
+    fi
+    mkdir -p "$G"
+    chown brgateway:brgateway "$G"
+    chmod 0750 "$G"
+    # notify.env holds SMTP credentials: root:brgateway 0640 (conffile, so every configure).
+    if [ -e "$NOTIFY" ]; then
+      chown root:brgateway "$NOTIFY"
+      chmod 0640 "$NOTIFY"
+    fi
+
     if [ -d /run/systemd/system ]; then
       systemctl daemon-reload || true
     fi
-    systemctl enable browserrenderer-mcp.service >/dev/null 2>&1 || true
+    systemctl enable browserrenderer-mcp.service browserrenderer-gateway.service >/dev/null 2>&1 || true
 
     host=$(sed -n 's/^BRMCP_HOSTNAME=//p' "$ENVF" 2>/dev/null | tail -n 1 | tr -d ' "'"'" )
     if [ -z "$host" ]; then
       echo "browserrenderer-mcp: BRMCP_HOSTNAME is not set." >&2
       echo "  Edit $ENVF, set BRMCP_HOSTNAME, then run:" >&2
-      echo "  systemctl restart browserrenderer-mcp" >&2
+      echo "  systemctl restart browserrenderer-mcp browserrenderer-gateway" >&2
     elif [ -d /run/systemd/system ]; then
       systemctl restart browserrenderer-mcp.service || \
         echo "browserrenderer-mcp: service failed to start; see journalctl -u browserrenderer-mcp" >&2
+      systemctl restart browserrenderer-gateway.service || \
+        echo "browserrenderer-gateway: service failed to start; see journalctl -u browserrenderer-gateway" >&2
     fi
     ;;
   abort-upgrade|abort-remove|abort-deconfigure)
