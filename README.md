@@ -45,18 +45,44 @@ Page content is untrusted: the tool descriptions tell the model never to treat i
 instructions, and the server-side limits above (fixed recipient, link prefixes, dedupe,
 daily cap) bound the damage if it does.
 
+## Token footprint
+
+The gateway trims what an LLM client has to read, without removing any upstream tool or
+parameter (every upstream argument still works when sent):
+
+- `browser_snapshot` returns a compact outline by default (`BRMCP_SNAPSHOT_MODE`, default
+  `outline`); `mode=interactive` (optionally `urls=true`) lists controls with refs, `mode=full`
+  the whole tree, capped by `max_chars` (default 20000). `target` or `depth` imply `full`.
+  With `filename` the result passes through unchanged.
+- `browser_find` keeps whole matches up to `max_chars` (`BRMCP_FIND_CHARS`, default 6000).
+- `browser_page_text` (gateway tool) reads visible text, optionally of a CSS `selector`, with
+  `max_chars` (`BRMCP_PAGE_TEXT_CHARS`, default 8000) and `offset` for paging.
+- `browser_take_screenshot` is downscaled and sent as JPEG by default (`resize`, default
+  `BRMCP_SCREENSHOT_SCALE=60` percent). With `target`, `element`, `filename` or `resize=1` it
+  goes to the stock tool unchanged. `browser_run_code_unsafe` is a plain pass-through.
+- Any text part longer than `BRMCP_MAX_RESULT_CHARS` (default 40000) is cut with a note.
+- `BRMCP_CODEGEN` (default `none`) stops the backend echoing the Playwright code in results.
+- Tool listings drop `$schema`, the descriptive `element` arguments and verbose descriptions.
+
+Every tool call logs one size line (never arguments or content), for example:
+
+    journalctl -u browserrenderer-gateway -g 'call tool=' -n 50
+    gateway: call tool=browser_snapshot ms=412 text_chars=1873 images=0 image_b64_chars=0 raw_text_chars=47520 est_tokens=535 error=0
+
+`list tools=<n> chars=<n>` is logged on every `tools/list`.
+
 ## Build
 
 Needs node/npm, `dpkg-deb`, `fakeroot`.
 
-    ./build.sh        # -> dist/browserrenderer-mcp_0.0.83-5_all.deb
+    ./build.sh        # -> dist/browserrenderer-mcp_0.0.83-7_all.deb
 
 The build uses `npm ci` from the committed lockfile and `SOURCE_DATE_EPOCH` from the
 last git commit.
 
 ## Install
 
-    apt install ./browserrenderer-mcp_0.0.83-5_all.deb
+    apt install ./browserrenderer-mcp_0.0.83-7_all.deb
 
 Without dpkg: `./install.sh` (root, from a checkout). To expose it through
 Cloudflare, `scripts/install-cloudflared.sh` adds the official apt repo and installs

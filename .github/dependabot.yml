@@ -1,0 +1,10 @@
+# Keeps the bundled npm dependencies (shipped inside the .deb) visible and
+# up to date: GitHub opens a PR when a pinned version in package.json has an
+# update or a security advisory.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

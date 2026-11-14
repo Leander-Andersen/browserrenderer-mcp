@@ -15,6 +15,7 @@ EXE="${BRMCP_EXECUTABLE_PATH:-}"
 NOSANDBOX="${BRMCP_NO_SANDBOX:-0}"
 VIEWPORT="${BRMCP_VIEWPORT:-1440x900}"
 NAV_TIMEOUT="${BRMCP_NAV_TIMEOUT:-30000}"
+CODEGEN="${BRMCP_CODEGEN:-none}"
 EXTRA="${BRMCP_EXTRA_ARGS:-}"
 
 die() { echo "browserrenderer-mcp: ERROR: $*" >&2; exit 78; }
@@ -43,6 +44,10 @@ esac
 case "$NAV_TIMEOUT" in
   ''|*[!0-9]*) die "BRMCP_NAV_TIMEOUT must be milliseconds (got '$NAV_TIMEOUT')." ;;
 esac
+case "$CODEGEN" in
+  typescript|python|java|csharp|none) ;;
+  *) die "BRMCP_CODEGEN must be typescript, python, java, csharp or none (got '$CODEGEN')." ;;
+esac
 case "$NOSANDBOX" in 0|1) ;; *) die "BRMCP_NO_SANDBOX must be 0 or 1." ;; esac
 VIEWPORT=$(printf '%s' "$VIEWPORT" | tr ',' 'x')
 case "$VIEWPORT" in
@@ -63,6 +68,7 @@ set -- --headless --browser chromium \
   --output-dir "$DATA_DIR/output" \
   --viewport-size "$VIEWPORT" \
   --timeout-navigation "$NAV_TIMEOUT" \
+  --codegen "$CODEGEN" \
   --no-webmcp
 if [ "$MODE" = persistent ]; then
   set -- "$@" --user-data-dir "$DATA_DIR/profile"

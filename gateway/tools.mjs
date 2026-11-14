@@ -44,14 +44,14 @@ export const TOOL_DEFS = [
     name: 'watchlist_get',
     description:
       "Return the user's watchlist: things the user wants you to hunt for on finn.no (query, optional max price in NOK, location, notes). " +
-      'Call this first when asked to look for deals. ' + UNTRUSTED,
+      'Call this first when asked to look for deals.',
     inputSchema: schemaOf(Empty),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'watchlist_add',
     description:
-      "Add an item to the user's finn.no watchlist (max 50). Only add what the user asked for. Returns the new id. " + UNTRUSTED,
+      "Add an item to the user's finn.no watchlist (max 50). Only add what the user asked for. Returns the new id.",
     inputSchema: schemaOf(WatchAdd),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },

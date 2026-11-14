@@ -36,6 +36,11 @@ export function loadConfig() {
     });
   if (prefixes.length === 0) throw new Error('ALERT_LINK_PREFIXES is empty');
 
+  const snapshotMode = str('BRMCP_SNAPSHOT_MODE', 'outline').toLowerCase();
+  if (!['outline', 'interactive', 'full'].includes(snapshotMode)) {
+    throw new Error('BRMCP_SNAPSHOT_MODE must be outline, interactive or full');
+  }
+
   return {
     hostnames,
     bind,
@@ -56,6 +61,11 @@ export function loadConfig() {
     },
     alertPrefixes: prefixes,
     alertMaxPerDay: int('ALERT_MAX_PER_DAY', 20, { min: 1 }),
+    snapshotMode,
+    screenshotScalePct: int('BRMCP_SCREENSHOT_SCALE', 60, { min: 10, max: 100 }),
+    maxResultChars: int('BRMCP_MAX_RESULT_CHARS', 40000, { min: 1000 }),
+    pageTextChars: int('BRMCP_PAGE_TEXT_CHARS', 8000, { min: 1, max: 200000 }),
+    findChars: int('BRMCP_FIND_CHARS', 6000, { min: 1, max: 200000 }),
     hostname: os.hostname(),
   };
 }
