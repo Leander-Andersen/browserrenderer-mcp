@@ -53,8 +53,16 @@ parameter (every upstream argument still works when sent):
 - `browser_snapshot` returns a compact outline by default (`BRMCP_SNAPSHOT_MODE`, default
   `outline`); `mode=interactive` (optionally `urls=true`) lists controls with refs, `mode=full`
   the whole tree, capped by `max_chars` (default 20000). `target` or `depth` imply `full`.
-  With `filename` the result passes through unchanged.
-- `browser_find` keeps whole matches up to `max_chars` (`BRMCP_FIND_CHARS`, default 6000).
+  With `filename` the result passes through unchanged. Interactive mode takes optional filters:
+  `roles` (any role names, e.g. `["heading","img"]`), `name` (case-insensitive substring) and
+  `viewport=true` (only elements visible now); given without `mode` they imply interactive.
+  Without a `name` filter, a role+name repeated 4+ times collapses to one line with a count and
+  the first refs.
+- `browser_find` is searched in the gateway and returns one line per match (`link "x" [ref=e5] ->
+  url`, `[in ref=...]` for ref-less text), capped by `max_chars` (`BRMCP_FIND_CHARS`, default
+  6000). `detail=true` returns the stock output with ancestor context; `filename` passes through.
+- Action results (navigate, click, ...) drop the `### Snapshot` link to a `.yml` file on the
+  server, which a remote client cannot open.
 - `browser_page_text` (gateway tool) reads visible text, optionally of a CSS `selector`, with
   `max_chars` (`BRMCP_PAGE_TEXT_CHARS`, default 8000) and `offset` for paging.
 - `browser_take_screenshot` is downscaled and sent as JPEG by default (`resize`, default
@@ -75,14 +83,14 @@ Every tool call logs one size line (never arguments or content), for example:
 
 Needs node/npm, `dpkg-deb`, `fakeroot`.
 
-    ./build.sh        # -> dist/browserrenderer-mcp_0.0.83-7_all.deb
+    ./build.sh        # -> dist/browserrenderer-mcp_0.0.83-8_all.deb
 
 The build uses `npm ci` from the committed lockfile and `SOURCE_DATE_EPOCH` from the
 last git commit.
 
 ## Install
 
-    apt install ./browserrenderer-mcp_0.0.83-7_all.deb
+    apt install ./browserrenderer-mcp_0.0.83-8_all.deb
 
 Without dpkg: `./install.sh` (root, from a checkout). To expose it through
 Cloudflare, `scripts/install-cloudflared.sh` adds the official apt repo and installs

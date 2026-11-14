@@ -103,22 +103,65 @@ function cleanLine(line) {
   return line.replace(/ \[cursor=pointer\]/g, '').replace(/:\s*$/, '');
 }
 
-// Flat list of interactive lines (+ headings for context).
-export function interactiveLines(yaml, urls = false) {
+const BOX_RE = / \[box=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)\]/;
+export const COLLAPSE_AT = 4;
+export const COLLAPSE_NOTE = '[repeated items collapsed; use name="..." or browser_find to list them all]';
+
+// True when the line's [box=x,y,w,h] (viewport-relative CSS px) has area and intersects {width, height}.
+export function boxInViewport(line, vp) {
+  const m = line.match(BOX_RE);
+  if (!m) return false;
+  const [x, y, w, h] = m.slice(1).map(Number);
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return false;
+  return x < vp.width && x + w > 0 && y < vp.height && y + h > 0;
+}
+
+// Flat list of interactive lines (+ headings for context). Optional filters in `opts`:
+// roles (array, replaces the built-in role set), name (case-insensitive substring), viewport ({width, height},
+// needs [box=...] in the yaml), stripBoxes. Without a name filter, 4+ repeats of one role+name collapse.
+export function interactiveLines(yaml, urls = false, opts = {}) {
+  const { roles, name, viewport, stripBoxes = false } = opts;
+  const roleSet = Array.isArray(roles) ? new Set(roles) : null;
+  const needle = name ? name.toLowerCase() : null;
   const lines = yaml.split('\n');
-  const out = [];
+  const entries = [];
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(LINE_RE);
     if (!m) continue;
     const role = m[2];
-    if (!INTERACTIVE_ROLES.has(role) && role !== 'heading') continue;
+    if (roleSet ? !roleSet.has(role) : !INTERACTIVE_ROLES.has(role) && role !== 'heading') continue;
+    if (viewport && !boxInViewport(lines[i], viewport)) continue;
     let l = cleanLine(lines[i].trim()).replace(/^- /, '');
+    if (stripBoxes) l = l.replace(BOX_RE, '');
+    if (needle && !l.toLowerCase().includes(needle)) continue;
+    const key = l.match(/^[A-Za-z]+(?: "(?:[^"\\]|\\.)*")?/)?.[0] ?? role;
+    const ref = l.match(/\[ref=([^\]]+)\]/)?.[1];
+    let text = l;
     if (urls && role === 'link') {
       const next = lines[i + 1]?.match(/^\s*- \/url: (.*)$/);
-      if (next) l += ` -> ${next[1].trim()}`;
+      if (next) text += ` -> ${next[1].trim()}`;
     }
-    out.push(l);
+    entries.push({ key, ref, text });
   }
+  if (needle) return entries.map((e) => e.text);
+  const groups = new Map();
+  for (const e of entries) {
+    const g = groups.get(e.key);
+    if (g) g.push(e); else groups.set(e.key, [e]);
+  }
+  const out = [];
+  const done = new Set();
+  let collapsed = false;
+  for (const e of entries) {
+    const g = groups.get(e.key);
+    if (g.length < COLLAPSE_AT) { out.push(e.text); continue; }
+    if (done.has(e.key)) continue;
+    done.add(e.key);
+    collapsed = true;
+    const refs = g.map((x) => x.ref).filter(Boolean).slice(0, 3);
+    out.push(`${e.key} x${g.length}${refs.length ? ` [refs ${refs.join(', ')}, ...]` : ''}`);
+  }
+  if (collapsed) out.push(COLLAPSE_NOTE);
   return out;
 }
 
@@ -129,10 +172,12 @@ export function shapeFull(text, maxChars) {
   return assemble(parts.head, t.text, t.truncated ? truncNote(t) : '', parts.after);
 }
 
-export function shapeInteractive(text, { urls = false, maxChars }) {
+export function shapeInteractive(text, { urls = false, maxChars, roles, name, viewport, stripBoxes = false }) {
   const parts = splitSnapshot(text);
   if (!parts) return null;
-  const body = interactiveLines(parts.yaml, urls).join('\n');
+  const filtered = roles !== undefined || name !== undefined || viewport !== undefined;
+  const found = interactiveLines(parts.yaml, urls, { roles, name, viewport, stripBoxes });
+  const body = found.length || !filtered ? found.join('\n') : '(no matching elements)';
   const t = truncateLines(body, maxChars);
   return assemble(parts.head, t.text, t.truncated ? truncNote(t) : '', parts.after);
 }
@@ -192,6 +237,119 @@ export function capFind(text, maxChars) {
     kept++;
   }
   return `${blocks.slice(0, kept).join(FIND_SEP)}\n\n[showing ${kept} of ${blocks.length} matches; narrow the search or raise max_chars]`;
+}
+
+// ---- compact find (gateway-side search of the full snapshot) ----
+
+const indentOf = (l) => l.length - l.trimStart().length;
+const isUrlLine = (l) => /^\s*- \/url: /.test(l);
+
+// Compile upstream-style regex syntax: "/pattern/flags" or a plain (case-sensitive) pattern.
+export function compileFindRegex(src) {
+  const m = src.match(/^\/(.+)\/([a-z]*)$/s);
+  return m ? new RegExp(m[1], m[2].replace(/[gy]/g, '')) : new RegExp(src);
+}
+
+function nearestParent(lines, i) {
+  let ind = indentOf(lines[i]);
+  for (let j = i - 1; j >= 0; j--) {
+    if (!lines[j].trim()) continue;
+    if (indentOf(lines[j]) < ind) return j;
+  }
+  return -1;
+}
+
+function ancestorRef(lines, i) {
+  let ind = indentOf(lines[i]);
+  for (let j = i - 1; j >= 0 && ind > 0; j--) {
+    if (!lines[j].trim() || indentOf(lines[j]) >= ind) continue;
+    const r = lines[j].match(/\[ref=([^\]]+)\]/)?.[1];
+    if (r) return r;
+    ind = indentOf(lines[j]);
+  }
+  return undefined;
+}
+
+function compactNode(lines, i) {
+  let l = cleanLine(lines[i].trim()).replace(/^- /, '');
+  if (/^- link\b/.test(lines[i].trim())) {
+    const u = lines[i + 1]?.match(/^\s*- \/url: (.*)$/);
+    if (u) l += ` -> ${u[1].trim()}`;
+  }
+  if (!/\[ref=/.test(l)) {
+    const r = ancestorRef(lines, i);
+    if (r) l += ` [in ref=${r}]`;
+  }
+  return l;
+}
+
+// Search a snapshot yaml body line by line; returns { text } or { error }.
+export function compactFind(yaml, { text, regex, maxChars }) {
+  if ((text === undefined) === (regex === undefined)) return { error: 'Provide exactly one of text or regex.' };
+  let test;
+  let label;
+  if (text !== undefined) {
+    if (typeof text !== 'string' || !text) return { error: 'text must be a non-empty string.' };
+    const needle = text.toLowerCase();
+    test = (l) => l.toLowerCase().includes(needle);
+    label = `"${text}"`;
+  } else {
+    if (typeof regex !== 'string' || !regex) return { error: 'regex must be a non-empty string.' };
+    let re;
+    try { re = compileFindRegex(regex); } catch (e) { return { error: `Invalid regex: ${e.message}` }; }
+    test = (l) => re.test(l);
+    label = /^\/.+\/[a-z]*$/s.test(regex) ? regex : `/${regex}/`;
+  }
+  const lines = yaml.split('\n');
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    if (!test(cleanLine(lines[i].trim()).replace(/^- /, ''))) continue;
+    let node = i;
+    if (isUrlLine(lines[i])) {
+      const p = nearestParent(lines, i);
+      if (p >= 0 && /^- link\b/.test(lines[p].trim())) node = p;
+    }
+    const l = compactNode(lines, node);
+    if (!seen.has(l)) { seen.add(l); out.push(l); }
+  }
+  if (!out.length) return { text: `### Result\nNo matches for ${label}.` };
+  const head = `### Result\nFound ${out.length} match${out.length === 1 ? '' : 'es'} for ${label}:\n`;
+  let kept = 0;
+  let len = head.length;
+  for (const l of out) {
+    const add = l.length + (kept ? 1 : 0);
+    if (kept > 0 && len + add > maxChars) break;
+    len += add;
+    kept++;
+  }
+  let body = out.slice(0, kept).join('\n');
+  if (kept < out.length) body += `\n[showing ${kept} of ${out.length} matches; narrow the search or raise max_chars]`;
+  return { text: head + body };
+}
+
+// ---- action results: drop the server-side snapshot file link ----
+
+const SNAP_LINK_RE = /(^|\n)### Snapshot\n- \[[^\]\n]*\]\([^)\n]*\.yml\)[ \t]*(?:\n+(?=### )|\n*$)/;
+
+// Remove a "### Snapshot" section whose body is only a link to a .yml file (unreachable for remote clients).
+export function stripSnapshotLink(text) {
+  if (typeof text !== 'string' || !SNAP_LINK_RE.test(text)) return text;
+  return text.replace(SNAP_LINK_RE, (_m, pre) => pre).replace(/\s+$/, '');
+}
+
+export function stripSnapshotLinkResult(result) {
+  if (!result || !Array.isArray(result.content)) return result;
+  let changed = false;
+  const content = result.content.map((p) => {
+    if (p && p.type === 'text' && typeof p.text === 'string') {
+      const t = stripSnapshotLink(p.text);
+      if (t !== p.text) { changed = true; return { ...p, text: t }; }
+    }
+    return p;
+  });
+  return changed ? { ...result, content } : result;
 }
 
 // ---- evaluate-result parsing / page text ----

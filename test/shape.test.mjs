@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   splitSnapshot, shapeFull, shapeInteractive, shapeOutline, interactiveLines, capFind, FIND_SEP, capText, capResult,
-  parseEvalResult, formatPageText, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, OUTLINE_HINT,
+  parseEvalResult, formatPageText, compactFind, compileFindRegex, boxInViewport, stripSnapshotLink, stripSnapshotLinkResult, COLLAPSE_NOTE, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, OUTLINE_HINT,
 } from '../gateway/shape.mjs';
 
 const yaml = [
@@ -178,4 +178,128 @@ test('trimTool: $schema, element hidden, descriptions shortened, props kept', ()
   assert.deepEqual(injectRequired({ a: '1' }, req.elementRequired), { a: '1', element: 'element' });
   assert.deepEqual(injectRequired({ a: '1', element: 'mine' }, req.elementRequired), { a: '1', element: 'mine' });
   assert.deepEqual(injectRequired({ a: '1' }, undefined), { a: '1' });
+});
+
+const hn = [
+  '- table [ref=e3]:',
+  '  - row [ref=e5]:',
+  '    - cell [ref=e13]:',
+  '      - link "comments" [ref=e19] [cursor=pointer]:',
+  '        - /url: newcomments',
+  '      - text: "|"',
+  '      - link "2324 comments" [ref=e55] [cursor=pointer]:',
+  '        - /url: item?id=50467087',
+  '      - text: "42 points by bob"',
+  '      - textbox "Search" [ref=e60]: hello',
+  '      - link "dup" [ref=e61]:',
+  '        - /url: dup',
+  '      - link "dup" [ref=e61]:',
+  '        - /url: dup',
+].join('\n');
+
+test('compact find: text match, url-line match dedupes into parent link', () => {
+  const r = compactFind(hn, { text: 'COMMENTS', maxChars: 5000 }).text;
+  assert.equal(r, '### Result\nFound 2 matches for "COMMENTS":\n' +
+    'link "comments" [ref=e19] -> newcomments\nlink "2324 comments" [ref=e55] -> item?id=50467087');
+  const u = compactFind(hn, { text: 'newcomments', maxChars: 5000 }).text;
+  assert.equal(u, '### Result\nFound 1 match for "newcomments":\nlink "comments" [ref=e19] -> newcomments');
+});
+
+test('compact find: no-ref line gets [in ref], textbox keeps value, dedupe', () => {
+  const r = compactFind(hn, { text: 'points', maxChars: 5000 }).text;
+  assert.match(r, /\ntext: "42 points by bob" \[in ref=e13\]$/);
+  assert.match(compactFind(hn, { text: 'Search', maxChars: 5000 }).text, /\ntextbox "Search" \[ref=e60\]: hello$/);
+  const d = compactFind(hn, { text: 'dup', maxChars: 5000 }).text;
+  assert.equal(d, '### Result\nFound 1 match for "dup":\nlink "dup" [ref=e61] -> dup');
+});
+
+test('compact find: regex plain is case-sensitive, /re/flags supplies flags', () => {
+  assert.match(compactFind(hn, { regex: '\\d+ points', maxChars: 5000 }).text, /Found 1 match for \/\\d\+ points\/:/);
+  assert.match(compactFind(hn, { regex: 'COMMENTS', maxChars: 5000 }).text, /^### Result\nNo matches for \/COMMENTS\/\.$/);
+  assert.match(compactFind(hn, { regex: '/COMMENTS/i', maxChars: 5000 }).text, /Found 2 matches for \/COMMENTS\/i:/);
+  assert.ok(compileFindRegex('/a/gi').flags === 'i');
+});
+
+test('compact find: errors, zero matches, cap note', () => {
+  assert.match(compactFind(hn, { maxChars: 5000 }).error, /exactly one/);
+  assert.match(compactFind(hn, { text: 'a', regex: 'b', maxChars: 5000 }).error, /exactly one/);
+  assert.match(compactFind(hn, { regex: '(', maxChars: 5000 }).error, /Invalid regex/);
+  assert.equal(compactFind(hn, { text: 'zzz', maxChars: 5000 }).text, '### Result\nNo matches for "zzz".');
+  const many = Array.from({ length: 50 }, (_, i) => `- link "item ${i}" [ref=e${i}]`).join('\n');
+  const c = compactFind(many, { text: 'item', maxChars: 200 }).text;
+  assert.match(c, /\[showing \d+ of 50 matches; narrow the search or raise max_chars\]$/);
+  assert.ok(c.length < 300);
+  assert.match(compactFind(many, { text: 'item', maxChars: 1 }).text, /showing 1 of 50/);
+});
+
+const boxed = [
+  '- generic [ref=e1]:',
+  '  - link "in" [ref=e2] [box=10,10,100,20]',
+  '  - link "partly" [ref=e3] [box=1400,880,100,100]',
+  '  - link "below" [ref=e4] [box=10,900,100,20]',
+  '  - link "zero" [ref=e5] [box=10,10,0,0]',
+  '  - link "left" [ref=e6] [box=-200,10,100,20]',
+  '  - button "Go" [ref=e7] [box=5,5,10,10]',
+  '  - link "nobox" [ref=e8]',
+].join('\n');
+
+test('viewport filter is a pure function of boxes + viewport size', () => {
+  const vp = { width: 1440, height: 900 };
+  assert.equal(boxInViewport('- x [box=10,10,5,5]', vp), true);
+  assert.equal(boxInViewport('- x [box=0,900,5,5]', vp), false);
+  assert.equal(boxInViewport('- x', vp), false);
+  assert.deepEqual(interactiveLines(boxed, false, { viewport: vp, stripBoxes: true }), [
+    'link "in" [ref=e2]', 'link "partly" [ref=e3]', 'button "Go" [ref=e7]',
+  ]);
+  assert.equal(interactiveLines(boxed, false, { viewport: vp })[0], 'link "in" [ref=e2] [box=10,10,100,20]');
+});
+
+const reps = (n) => [
+  '- main [ref=e1]:',
+  ...Array.from({ length: n }, (_, i) => `  - link "hide" [ref=e${50 + i}] [cursor=pointer]:\n    - /url: hide?id=${i}`),
+  '  - link "other" [ref=e9]',
+  '  - heading "Top" [level=2] [ref=e10]',
+  '  - img "pic" [ref=e11]',
+].join('\n');
+
+test('interactive filters: roles and name', () => {
+  assert.deepEqual(interactiveLines(yaml, false, { roles: ['heading'] }), [
+    'heading "Hacker News" [level=1] [ref=e5]', 'heading "Top" [level=2] [ref=e10]',
+  ]);
+  assert.deepEqual(interactiveLines(reps(2), false, { roles: ['img'] }), ['img "pic" [ref=e11]']);
+  assert.deepEqual(interactiveLines(yaml, false, { name: 'SEARCH' }), ['textbox "Search" [ref=e13]: hello']);
+  assert.match(shapeInteractive(snap(), { maxChars: 1000, name: 'nomatch' }), /\(no matching elements\)/);
+});
+
+test('interactive collapsing: threshold 4, urls hidden, none with name', () => {
+  assert.equal(interactiveLines(reps(3), true).filter((l) => l.startsWith('link "hide"')).length, 3);
+  assert.ok(!interactiveLines(reps(3)).includes(COLLAPSE_NOTE));
+  const c = interactiveLines(reps(30), true);
+  assert.deepEqual(c, [
+    'link "hide" x30 [refs e50, e51, e52, ...]', 'link "other" [ref=e9]', 'heading "Top" [level=2] [ref=e10]', COLLAPSE_NOTE,
+  ]);
+  assert.equal(interactiveLines(reps(4)).filter((l) => l.includes('x4')).length, 1);
+  const n = interactiveLines(reps(30), true, { name: 'hide' });
+  assert.equal(n.length, 30);
+  assert.equal(n[0], 'link "hide" [ref=e50] -> hide?id=0');
+  assert.ok(!n.includes(COLLAPSE_NOTE));
+});
+
+test('stripSnapshotLink: removes link-only section, keeps the rest', () => {
+  const link = '### Snapshot\n- [Snapshot](output/page-2026.yml)';
+  assert.equal(stripSnapshotLink(`### Ran code\nx\n### Page\n- Page URL: u\n${link}`), '### Ran code\nx\n### Page\n- Page URL: u');
+  assert.equal(stripSnapshotLink(`### Page\n- u\n${link}\n### Events\n- one`), '### Page\n- u\n### Events\n- one');
+  assert.equal(stripSnapshotLink(link), '');
+  const inline = '### Page\n- u\n### Snapshot\n```yaml\n- a [ref=e1]\n```';
+  assert.equal(stripSnapshotLink(inline), inline);
+  const other = '### Snapshot\n- [Snapshot](out/a.yml)\n- extra line';
+  assert.equal(stripSnapshotLink(other), other);
+  const notYml = '### Snapshot\n- [Snapshot](out/a.png)';
+  assert.equal(stripSnapshotLink(notYml), notYml);
+  const r = { content: [{ type: 'text', text: `a\n${link}` }, { type: 'image', data: 'z', mimeType: 'image/png' }] };
+  const o = stripSnapshotLinkResult(r);
+  assert.equal(o.content[0].text, 'a');
+  assert.equal(o.content[1], r.content[1]);
+  const same = { content: [{ type: 'text', text: 'plain' }] };
+  assert.equal(stripSnapshotLinkResult(same), same);
 });

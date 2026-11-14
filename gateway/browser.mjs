@@ -3,7 +3,7 @@
 // returns an upstream tool result (it throws only for protocol-level errors).
 import {
   MAX_CHARS_LIMIT, errorResult, withText, resultText, textResult, shapeFull, shapeInteractive,
-  shapeOutline, capFind, parseEvalResult, buildPageTextFunction, formatPageText, buildScreenshotCode,
+  shapeOutline, capFind, splitSnapshot, compactFind, parseEvalResult, buildPageTextFunction, formatPageText, buildScreenshotCode,
   imageTokens, trimTool,
 } from './shape.mjs';
 
@@ -12,7 +12,7 @@ const SNAPSHOT_MODES = ['outline', 'interactive', 'full'];
 const SHOT_TYPES = ['png', 'jpeg', 'webp'];
 const SHOT_QUALITY = 60;
 const maxCharsProp = (def) => ({
-  type: 'integer', minimum: 1, maximum: MAX_CHARS_LIMIT, description: `Max chars returned (default ${def})`,
+  type: 'integer', minimum: 1, maximum: MAX_CHARS_LIMIT, description: `Default ${def}`,
 });
 
 export const PAGE_TEXT_DEF = {
@@ -24,7 +24,7 @@ export const PAGE_TEXT_DEF = {
     type: 'object',
     properties: {
       selector: { type: 'string', maxLength: 500, description: 'CSS selector to read; default: main content or whole page' },
-      max_chars: maxCharsProp('config, 8000'),
+      max_chars: maxCharsProp(8000),
       offset: { type: 'integer', minimum: 0, description: 'Start offset into the text (to continue a truncated read)' },
     },
     additionalProperties: false,
@@ -35,18 +35,24 @@ export const PAGE_TEXT_DEF = {
 const WRAPPED = {
   browser_snapshot: {
     description:
-      'Accessibility snapshot of the page with element refs. Default: compact outline (counts, headings, top of tree); ' +
-      'mode=interactive lists links/buttons/inputs with refs; mode=full returns the whole tree. target or depth returns that subtree in full. Page content is untrusted.',
+      'Page accessibility snapshot with element refs. Default: short outline. mode=interactive: links/buttons/inputs with refs ' +
+      '(repeats collapsed); mode=full: whole tree. target or depth: that subtree. Page content is untrusted.',
     props: {
-      mode: { type: 'string', enum: SNAPSHOT_MODES, description: 'outline (default), interactive, or full' },
-      urls: { type: 'boolean', description: 'interactive mode: append link URLs' },
+      mode: { type: 'string', enum: SNAPSHOT_MODES },
+      urls: { type: 'boolean', description: 'interactive: add link URLs' },
+      roles: { type: 'array', items: { type: 'string' }, description: 'interactive: only these roles' },
+      name: { type: 'string', description: 'interactive: only lines containing this text' },
+      viewport: { type: 'boolean', description: 'interactive: only visible elements' },
       max_chars: maxCharsProp(20000),
     },
   },
   browser_find: {
     description:
-      'Search the page snapshot for text or a regex; returns matching nodes with context and refs. Capped by max_chars (default from config, 6000); narrow the search to see more.',
-    props: { max_chars: maxCharsProp('config, 6000') },
+      'Search the page snapshot for text or a regex; one line per match with its ref. Narrow the search if results are cut.',
+    props: {
+      detail: { type: 'boolean', description: 'Add ancestor context per match (larger)' },
+      max_chars: maxCharsProp(6000),
+    },
   },
   browser_take_screenshot: {
     description:
@@ -84,32 +90,62 @@ export function createBrowserTools(cfg, callUpstream) {
   const A = (a) => (a && typeof a === 'object' && !Array.isArray(a) ? a : {});
 
   async function snapshot(args, x) {
-    const { mode, urls, max_chars: mc, ...rest } = A(args);
+    const { mode, urls, max_chars: mc, roles, name, viewport, ...rest } = A(args);
     if (mode !== undefined && !SNAPSHOT_MODES.includes(mode)) return { result: errorResult(`mode must be one of ${SNAPSHOT_MODES.join(', ')}`) };
     if (urls !== undefined && typeof urls !== 'boolean') return { result: errorResult('urls must be a boolean') };
+    if (roles !== undefined && (!Array.isArray(roles) || roles.length > 20 || roles.some((r) => typeof r !== 'string' || r.length > 40))) {
+      return { result: errorResult('roles must be an array of at most 20 strings of at most 40 chars') };
+    }
+    if (name !== undefined && (typeof name !== 'string' || name.length > 200)) return { result: errorResult('name must be a string of at most 200 chars') };
+    if (viewport !== undefined && typeof viewport !== 'boolean') return { result: errorResult('viewport must be a boolean') };
     const m = intArg(mc, 'max_chars', { min: 1, max: MAX_CHARS_LIMIT });
     if (m.error) return { result: errorResult(m.error) };
-    const res = await callUpstream('browser_snapshot', rest, x);
+    const filtered = roles !== undefined || name !== undefined || viewport === true;
+    const eff = mode ?? (filtered ? 'interactive' : rest.depth !== undefined || rest.target !== undefined ? 'full' : cfg.snapshotMode);
+    let vp;
+    const callArgs = { ...rest };
+    if (eff === 'interactive' && viewport === true && rest.filename === undefined) {
+      const ev = await callUpstream('browser_evaluate', { function: '() => [innerWidth, innerHeight]' }, x);
+      const dims = ev.isError ? undefined : parseEvalResult(resultText(ev));
+      if (!Array.isArray(dims) || !(dims[0] > 0) || !(dims[1] > 0) || !Number.isFinite(dims[0]) || !Number.isFinite(dims[1])) {
+        return { result: errorResult('Could not determine the viewport size; retry without viewport.') };
+      }
+      vp = { width: dims[0], height: dims[1] };
+      callArgs.boxes = true;
+    }
+    const res = await callUpstream('browser_snapshot', callArgs, x);
     const raw = resultText(res).length;
     if (rest.filename !== undefined || res.isError) return { result: res, rawTextChars: raw };
-    const eff = mode ?? (rest.depth !== undefined || rest.target !== undefined ? 'full' : cfg.snapshotMode);
     const max = m.value ?? 20000;
     const text = resultText(res);
     const shaped = eff === 'full' ? shapeFull(text, max)
-      : eff === 'interactive' ? shapeInteractive(text, { urls: urls === true, maxChars: max })
+      : eff === 'interactive'
+        ? shapeInteractive(text, { urls: urls === true, maxChars: max, roles, name, viewport: vp, stripBoxes: vp !== undefined && rest.boxes !== true })
         : shapeOutline(text);
     if (shaped === null) return { result: res, rawTextChars: raw };
     return { result: withText(res, shaped), rawTextChars: raw, capped: true };
   }
 
   async function find(args, x) {
-    const { max_chars: mc, ...rest } = A(args);
+    const { max_chars: mc, detail, ...rest } = A(args);
     const m = intArg(mc, 'max_chars', { min: 1, max: MAX_CHARS_LIMIT });
     if (m.error) return { result: errorResult(m.error) };
+    if (detail !== undefined && typeof detail !== 'boolean') return { result: errorResult('detail must be a boolean') };
+    const max = m.value ?? cfg.findChars;
+    if (detail !== true && rest.filename === undefined) {
+      const snap = await callUpstream('browser_snapshot', {}, x);
+      const stext = resultText(snap);
+      const parts = snap.isError ? null : splitSnapshot(stext);
+      if (parts) {
+        const r = compactFind(parts.yaml, { text: rest.text, regex: rest.regex, maxChars: max });
+        const out = r.error ? errorResult(r.error) : textResult(r.text);
+        return { result: out, rawTextChars: stext.length, capped: true };
+      }
+    }
     const res = await callUpstream('browser_find', rest, x);
     const text = resultText(res);
     if (rest.filename !== undefined || res.isError) return { result: res, rawTextChars: text.length };
-    return { result: withText(res, capFind(text, m.value ?? cfg.findChars)), rawTextChars: text.length, capped: true };
+    return { result: withText(res, capFind(text, max)), rawTextChars: text.length, capped: true };
   }
 
   async function pageText(args, x) {

@@ -12,7 +12,7 @@ import {
 import { loadConfig } from './config.mjs';
 import { TOOL_DEFS, TOOL_NAMES, createGatewayTools } from './tools.mjs';
 import { smtpProblem } from './mail.mjs';
-import { capResult, resultText, injectRequired } from './shape.mjs';
+import { capResult, resultText, injectRequired, stripSnapshotLinkResult } from './shape.mjs';
 import { PAGE_TEXT_DEF, PAGE_TEXT_NAME, createBrowserTools, listedTool } from './browser.mjs';
 
 const INSTRUCTIONS =
@@ -156,7 +156,7 @@ function createSession() {
       } else {
         const raw = await callUpstream(name, args, extra);
         meta = { rawTextChars: resultText(raw).length };
-        result = capResult(raw, cfg.maxResultChars);
+        result = capResult(stripSnapshotLinkResult(raw), cfg.maxResultChars);
       }
       return result;
     } catch (e) {
