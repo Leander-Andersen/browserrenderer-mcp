@@ -3,9 +3,7 @@
 set -eu
 cd "$(dirname "$0")"
 ROOT=$(pwd)
-UPSTREAM=$(node -p "require('./package.json').dependencies['@playwright/mcp']")
-REVISION=8
-VERSION="$UPSTREAM-$REVISION"
+VERSION=$(node -p "require('./package.json').version")
 DEB="dist/browserrenderer-mcp_${VERSION}_all.deb"
 
 if SDE=$(git log -1 --format=%ct 2>/dev/null) && [ -n "$SDE" ]; then :; else SDE=1767225600; fi
@@ -25,6 +23,8 @@ cp gateway/*.mjs "$APP/gateway/"
 cp packaging/etc/browserrenderer-mcp.env packaging/etc/notify.env "$STAGE/etc/browserrenderer-mcp/"
 cp packaging/systemd/browserrenderer-mcp.service packaging/systemd/browserrenderer-gateway.service "$STAGE/lib/systemd/system/"
 cp README.md "$STAGE/usr/share/doc/browserrenderer-mcp/"
+# Always-current copy of the settings reference (the /etc one is a conffile and keeps admin edits on upgrade).
+cp packaging/etc/browserrenderer-mcp.env "$STAGE/usr/share/doc/browserrenderer-mcp/browserrenderer-mcp.env.default"
 sed "s/@VERSION@/$VERSION/" packaging/debian/control > "$STAGE/DEBIAN/control"
 cp packaging/debian/conffiles packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm "$STAGE/DEBIAN/"
 

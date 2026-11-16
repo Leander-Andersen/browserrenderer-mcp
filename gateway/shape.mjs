@@ -10,6 +10,7 @@ export const OUTLINE_HINT =
   'Read with browser_page_text; locate elements/refs with browser_find; list controls with mode="interactive"; ' +
   'expand a subtree with target=<ref>; whole tree with mode="full".';
 
+const indentOf = (l) => l.length - l.trimStart().length;
 const LINE_RE = /^(\s*)- ([A-Za-z]+)\b(.*)$/;
 
 // ---- generic text helpers ----
@@ -105,7 +106,8 @@ function cleanLine(line) {
 
 const BOX_RE = / \[box=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)\]/;
 export const COLLAPSE_AT = 4;
-export const COLLAPSE_NOTE = '[repeated items collapsed; use name="..." or browser_find to list them all]';
+export const COLLAPSE_NOTE = '[repeated items collapsed into one line each with all their refs; use name="..." or browser_find for details]';
+export const MAX_COLLAPSED_REFS = 60;
 
 // True when the line's [box=x,y,w,h] (viewport-relative CSS px) has area and intersects {width, height}.
 export function boxInViewport(line, vp) {
@@ -118,7 +120,8 @@ export function boxInViewport(line, vp) {
 
 // Flat list of interactive lines (+ headings for context). Optional filters in `opts`:
 // roles (array, replaces the built-in role set), name (case-insensitive substring), viewport ({width, height},
-// needs [box=...] in the yaml), stripBoxes. Without a name filter, 4+ repeats of one role+name collapse.
+// needs [box=...] in the yaml), stripBoxes. Without a name filter, 4+ repeats of one role+name (and, with urls,
+// the same URL) collapse to one line listing all their refs (first 60).
 export function interactiveLines(yaml, urls = false, opts = {}) {
   const { roles, name, viewport, stripBoxes = false } = opts;
   const roleSet = Array.isArray(roles) ? new Set(roles) : null;
@@ -134,12 +137,12 @@ export function interactiveLines(yaml, urls = false, opts = {}) {
     let l = cleanLine(lines[i].trim()).replace(/^- /, '');
     if (stripBoxes) l = l.replace(BOX_RE, '');
     if (needle && !l.toLowerCase().includes(needle)) continue;
-    const key = l.match(/^[A-Za-z]+(?: "(?:[^"\\]|\\.)*")?/)?.[0] ?? role;
+    let key = l.match(/^[A-Za-z]+(?: "(?:[^"\\]|\\.)*")?/)?.[0] ?? role;
     const ref = l.match(/\[ref=([^\]]+)\]/)?.[1];
     let text = l;
     if (urls && role === 'link') {
       const next = lines[i + 1]?.match(/^\s*- \/url: (.*)$/);
-      if (next) text += ` -> ${next[1].trim()}`;
+      if (next) { text += ` -> ${next[1].trim()}`; key += ` -> ${next[1].trim()}`; }
     }
     entries.push({ key, ref, text });
   }
@@ -158,8 +161,9 @@ export function interactiveLines(yaml, urls = false, opts = {}) {
     if (done.has(e.key)) continue;
     done.add(e.key);
     collapsed = true;
-    const refs = g.map((x) => x.ref).filter(Boolean).slice(0, 3);
-    out.push(`${e.key} x${g.length}${refs.length ? ` [refs ${refs.join(', ')}, ...]` : ''}`);
+    const all = g.map((x) => x.ref).filter(Boolean);
+    const refs = all.slice(0, MAX_COLLAPSED_REFS);
+    out.push(`${e.key} x${g.length}${refs.length ? ` [refs ${refs.join(', ')}${all.length > refs.length ? ', ...' : ''}]` : ''}`);
   }
   if (collapsed) out.push(COLLAPSE_NOTE);
   return out;
@@ -180,6 +184,44 @@ export function shapeInteractive(text, { urls = false, maxChars, roles, name, vi
   const body = found.length || !filtered ? found.join('\n') : '(no matching elements)';
   const t = truncateLines(body, maxChars);
   return assemble(parts.head, t.text, t.truncated ? truncNote(t) : '', parts.after);
+}
+
+const TEXT_ROLES = new Set([
+  'text', 'paragraph', 'link', 'cell', 'gridcell', 'columnheader', 'rowheader', 'listitem', 'blockquote', 'caption', 'term', 'definition', 'strong', 'emphasis', 'code',
+]);
+export const OUTLINE_TEXT_CHARS = 600;
+
+// Visible text of a snapshot yaml in document order (names of text-like nodes, de-duplicated, without items repeated
+// 4+ times or list ordinals), joined with " | " and cut at a separator to at most `max` chars.
+export function textExcerpt(yaml, max = OUTLINE_TEXT_CHARS) {
+  const texts = [];
+  const counts = new Map();
+  for (const raw of yaml.split('\n')) {
+    const m = raw.match(LINE_RE);
+    if (!m || !TEXT_ROLES.has(m[2])) continue;
+    let t = m[3].match(/^ "((?:[^"\\]|\\.)*)"/)?.[1] ?? m[3].match(/^(?: \[[^\]]*\])*: (.*)$/)?.[1] ?? '';
+    t = t.replace(/^"(.*)"$/, '$1').replace(/\\(["\\])/g, '$1').replace(/\s+/g, ' ').trim();
+    // Skip empties, punctuation and list ordinals ("12.").
+    if (t.length < 2 || !/[\p{L}\p{N}]/u.test(t) || /^\d+\.$/.test(t)) continue;
+    texts.push(t);
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const seen = new Set();
+  const out = [];
+  let len = 0;
+  for (const t of texts) {
+    // Repeated boilerplate ("upvote", "hide") says nothing about the page.
+    if (seen.has(t) || counts.get(t) >= COLLAPSE_AT) continue;
+    seen.add(t);
+    const add = t.length + (out.length ? 3 : 0);
+    if (len + add > max) {
+      if (!out.length) out.push(t.slice(0, max));
+      break;
+    }
+    out.push(t);
+    len += add;
+  }
+  return out.join(' | ');
 }
 
 const plural = (r) => (/(x|s)$/.test(r) ? `${r}es` : `${r}s`);
@@ -210,9 +252,16 @@ export function shapeOutline(text, { maxOutlineChars = 1500 } = {}) {
     `Full snapshot: ${lines.length} lines, ${parts.yaml.length} chars.`,
     `Interactive: ${countStr || 'none'}.`,
     headings.length ? `Headings:\n${headings.join('\n')}` : 'Headings: none.',
+  ];
+  if (headings.length < 3) {
+    const used = sections.join('\n').length + '\nText: '.length;
+    const ex = textExcerpt(parts.yaml, Math.min(OUTLINE_TEXT_CHARS, maxOutlineChars - used - 150));
+    if (ex) sections.push(`Text: ${ex}`);
+  }
+  sections.push(
     top.length ? `Top of tree:\n${top.join('\n')}` : '',
-  ].filter(Boolean);
-  let outline = sections.join('\n');
+  );
+  let outline = sections.filter(Boolean).join('\n');
   if (outline.length > maxOutlineChars) {
     const t = truncateLines(outline, maxOutlineChars);
     outline = `${t.text}\n[outline cut]`;
@@ -223,7 +272,60 @@ export function shapeOutline(text, { maxOutlineChars = 1500 } = {}) {
 
 // ---- find ----
 
+const FIND_HEAD_RE = /^### Result\nFound (\d+) match(?:es)? for ([^\n]*):\n\n/;
+
+// Leading ancestor lines (strictly deeper, each with children) that every block shares, or null.
+export function commonPath(blocks) {
+  if (blocks.length < 2) return null;
+  const lines = blocks.map((b) => b.split('\n'));
+  const path = [];
+  let prev = -1;
+  for (let n = 0; ; n++) {
+    const l = lines[0][n];
+    if (l === undefined || !/^\s*- .*:$/.test(l) || indentOf(l) <= prev) break;
+    if (!lines.every((ls) => ls[n] === l && ls[n + 1] !== undefined && indentOf(ls[n + 1]) > indentOf(l))) break;
+    path.push(l);
+    prev = indentOf(l);
+  }
+  if (!path.length) return null;
+  return { path: path.map((l) => l.trim().replace(/^- /, '').replace(/:$/, '')).join(' > '), blocks: lines.map((ls) => ls.slice(path.length).join('\n')) };
+}
+
+// Cap a stock browser_find (detail) result at maxChars, whole blocks only. Upstream's "Found N matches" counts matching
+// lines while one block (snippet) can hold several (their windows merge), so the header and note use the block count.
+// A leading ancestor path shared by the shown blocks is printed once.
 export function capFind(text, maxChars) {
+  const m = text.match(FIND_HEAD_RE);
+  if (!m) return capFindPlain(text, maxChars);
+  const blocks = text.slice(m[0].length).split(FIND_SEP);
+  const lines = Number(m[1]);
+  const unit = blocks.length === lines ? 'matches' : 'snippets';
+  const head = blocks.length === lines ? m[0] : `### Result\nFound ${lines} matching line${lines === 1 ? '' : 's'} in ${blocks.length} snippet${blocks.length === 1 ? '' : 's'} for ${m[2]}:\n\n`;
+  const build = (list, note) => {
+    const c = commonPath(list);
+    const body = (c ? c.blocks : list).join(FIND_SEP);
+    return `${head}${c ? `Common path: ${c.path}\n\n` : ''}${body}${note}`;
+  };
+  const all = build(blocks, '');
+  if (all.length <= maxChars) return all;
+  const note = (k) => `\n\n[showing ${k} of ${blocks.length} ${unit}; narrow the search or raise max_chars]`;
+  const c = commonPath(blocks);
+  const rest = c ? c.blocks : blocks;
+  const budget = maxChars - head.length - (c ? `Common path: ${c.path}\n\n`.length : 0);
+  let kept = 1;
+  let len = rest[0].length;
+  while (kept < rest.length && len + FIND_SEP.length + rest[kept].length <= budget) {
+    len += FIND_SEP.length + rest[kept].length;
+    kept++;
+  }
+  if (kept === 1 && len > budget) {
+    return `${head}${blocks[0].slice(0, Math.max(maxChars - head.length, 1))}\n[showing ${blocks.length === 1 ? 'part of 1 match' : `1 of ${blocks.length} ${unit}`}; narrow the search or raise max_chars]`;
+  }
+  if (kept === blocks.length) return build(blocks, '');
+  return build(blocks.slice(0, kept), note(kept));
+}
+
+function capFindPlain(text, maxChars) {
   const blocks = text.split(FIND_SEP);
   if (text.length <= maxChars) return text;
   if (blocks.length === 1) return `${text.slice(0, maxChars)}\n[showing part of 1 match; narrow the search or raise max_chars]`;
@@ -241,7 +343,6 @@ export function capFind(text, maxChars) {
 
 // ---- compact find (gateway-side search of the full snapshot) ----
 
-const indentOf = (l) => l.length - l.trimStart().length;
 const isUrlLine = (l) => /^\s*- \/url: /.test(l);
 
 // Compile upstream-style regex syntax: "/pattern/flags" or a plain (case-sensitive) pattern.

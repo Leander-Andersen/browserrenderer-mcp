@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   splitSnapshot, shapeFull, shapeInteractive, shapeOutline, interactiveLines, capFind, FIND_SEP, capText, capResult,
-  parseEvalResult, formatPageText, compactFind, compileFindRegex, boxInViewport, stripSnapshotLink, stripSnapshotLinkResult, COLLAPSE_NOTE, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, OUTLINE_HINT,
+  parseEvalResult, formatPageText, compactFind, compileFindRegex, boxInViewport, stripSnapshotLink, stripSnapshotLinkResult, COLLAPSE_NOTE, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, OUTLINE_HINT, commonPath, textExcerpt,
 } from '../gateway/shape.mjs';
 
 const yaml = [
@@ -271,13 +271,24 @@ test('interactive filters: roles and name', () => {
   assert.match(shapeInteractive(snap(), { maxChars: 1000, name: 'nomatch' }), /\(no matching elements\)/);
 });
 
-test('interactive collapsing: threshold 4, urls hidden, none with name', () => {
+test('interactive collapsing: threshold 4, all refs, same url only, none with name', () => {
   assert.equal(interactiveLines(reps(3), true).filter((l) => l.startsWith('link "hide"')).length, 3);
   assert.ok(!interactiveLines(reps(3)).includes(COLLAPSE_NOTE));
-  const c = interactiveLines(reps(30), true);
-  assert.deepEqual(c, [
-    'link "hide" x30 [refs e50, e51, e52, ...]', 'link "other" [ref=e9]', 'heading "Top" [level=2] [ref=e10]', COLLAPSE_NOTE,
-  ]);
+  const c = interactiveLines(reps(30));
+  assert.equal(c.length, 4);
+  assert.equal(c[0], `link "hide" x30 [refs ${Array.from({ length: 30 }, (_, i) => `e${50 + i}`).join(', ')}]`);
+  assert.deepEqual(c.slice(1), ['link "other" [ref=e9]', 'heading "Top" [level=2] [ref=e10]', COLLAPSE_NOTE]);
+  // refs are capped at 60
+  const c70 = interactiveLines(reps(70));
+  assert.ok(c70[0].startsWith('link "hide" x70 [refs e50, e51'));
+  assert.ok(c70[0].endsWith('e109, ...]'));
+  assert.equal(c70[0].split(', ').length, 61);
+  // with urls, different destinations stay separate; identical ones collapse
+  const u = interactiveLines(reps(30), true);
+  assert.equal(u.filter((l) => l.startsWith('link "hide"')).length, 30);
+  assert.ok(!u.includes(COLLAPSE_NOTE));
+  const same = Array.from({ length: 5 }, (_, i) => `  - link "more" [ref=e${i + 1}]:\n    - /url: ${i < 4 ? 'a' : 'b'}`).join('\n');
+  assert.deepEqual(interactiveLines(same, true), ['link "more" -> a x4 [refs e1, e2, e3, e4]', 'link "more" [ref=e5] -> b', COLLAPSE_NOTE]);
   assert.equal(interactiveLines(reps(4)).filter((l) => l.includes('x4')).length, 1);
   const n = interactiveLines(reps(30), true, { name: 'hide' });
   assert.equal(n.length, 30);
@@ -302,4 +313,90 @@ test('stripSnapshotLink: removes link-only section, keeps the rest', () => {
   assert.equal(o.content[1], r.content[1]);
   const same = { content: [{ type: 'text', text: 'plain' }] };
   assert.equal(stripSnapshotLinkResult(same), same);
+});
+
+// Captured from a stock browser_find detail=true run (news.ycombinator.com, text "comments"): upstream counts matching
+// lines (a link and its /url line both match), but the two lines of the first match share one snippet.
+const FIND_BLOCKS = ("- table [ref=e3]:\n  - rowgroup [ref=e4]:\n    - row [ref=e5]:\n      - cell [ref=e6]:\n        - table [ref=e7]:\n          - rowgroup [ref=e8]:\n            - row [ref=e9]:\n              - cell [ref=e13]:\n                - generic [ref=e14]:\n                  - link \"past\" [ref=e18] [cursor=pointer]:\n                    - /url: front\n                  - text: \"|\"\n                  - link \"comments\" [ref=e19] [cursor=pointer]:\n                    - /url: newcomments\n                  - text: \"|\"\n                  - link \"ask\" [ref=e20] [cursor=pointer]:\n                    - /url: ask\n\n----\n\n- table [ref=e3]:\n  - rowgroup [ref=e4]:\n    - row [ref=e28]:\n      - cell [ref=e29]:\n        - table [ref=e30]:\n          - rowgroup [ref=e31]:\n            - row [ref=e43]:\n              - cell [ref=e45]:\n                - generic [ref=e46]:\n                  - link \"hide\" [ref=e50] [cursor=pointer]:\n                    - /url: hide?id=50514470&goto=news\n                  - text: \"|\"\n                  - link \"51 comments\" [ref=e51] [cursor=pointer]:\n                    - /url: item?id=50514470\n            - row [ref=e52]\n            - row [ref=e53]:\n\n----\n\n- table [ref=e3]:\n  - rowgroup [ref=e4]:\n    - row [ref=e28]:\n      - cell [ref=e29]:\n        - table [ref=e30]:\n          - rowgroup [ref=e31]:\n            - row [ref=e64]:\n              - cell [ref=e66]:\n                - generic [ref=e67]:\n                  - link \"hide\" [ref=e71] [cursor=pointer]:\n                    - /url: hide?id=50513160&goto=news\n                  - text: \"|\"\n                  - link \"101 comments\" [ref=e72] [cursor=pointer]:\n                    - /url: item?id=50513160\n            - row [ref=e73]\n            - row [ref=e74]:").split(FIND_SEP);
+const findText = (n) => `### Result\nFound ${n} matches for "comments":\n\n${FIND_BLOCKS.join(FIND_SEP)}`;
+
+test('capFind: header and note count snippets, not matching lines', () => {
+  const out = capFind(findText(4), 100000);
+  assert.ok(out.startsWith('### Result\nFound 4 matching lines in 3 snippets for "comments":\n\n'));
+  assert.ok(!out.includes('Found 4 matches'));
+  const part = capFind(findText(4), 1200);
+  assert.match(part, /\[showing 2 of 3 snippets; narrow the search or raise max_chars\]$/);
+  // when counts agree the header is unchanged
+  assert.ok(capFind(findText(3), 100000).startsWith('### Result\nFound 3 matches for "comments":\n\n'));
+  assert.match(capFind(findText(3), 1000), /showing \d of 3 matches/);
+});
+
+test('capFind: shared ancestor path printed once, refs intact', () => {
+  const full = findText(3);
+  const out = capFind(full, 100000);
+  assert.ok(out.length < full.length);
+  assert.match(out, /\n\nCommon path: table \[ref=e3\] > rowgroup \[ref=e4\]\n\n/);
+  assert.equal((out.match(/- table \[ref=e3\]:/g) || []).length, 0);
+  for (const r of ['e5', 'e19', 'e28', 'e51', 'e72', 'e50']) assert.ok(out.includes(`[ref=${r}]`));
+  assert.equal(out.split(FIND_SEP).length, 3);
+  // the same number of snippets fits in fewer chars
+  const budget = full.length - 1;
+  assert.match(capFind(full, budget), /^### Result/);
+  assert.ok(!/showing/.test(capFind(full, budget)));
+  // blocks keep everything below the shared path
+  assert.ok(out.includes('    - row [ref=e5]:\n      - cell [ref=e6]:'));
+});
+
+test('commonPath: none for unrecognised or diverging blocks', () => {
+  assert.equal(commonPath(['a', 'b']), null);
+  assert.equal(commonPath(['- a [ref=e1]:\n  - x', '- b [ref=e2]:\n  - x']), null);
+  assert.equal(commonPath(['- a [ref=e1]:\n  - x']), null);
+  assert.equal(commonPath(['- a [ref=e1]:', '- a [ref=e1]:']), null);
+  const c = commonPath(['- a [ref=e1]:\n  - b [ref=e2]:\n    - x', '- a [ref=e1]:\n  - b [ref=e2]:\n    - y']);
+  assert.equal(c.path, 'a [ref=e1] > b [ref=e2]');
+  assert.deepEqual(c.blocks, ['    - x', '    - y']);
+  // unrecognised text is returned unchanged
+  const odd = 'plain\n\n----\n\nplain';
+  assert.equal(capFind(odd, 100000), odd);
+});
+
+const hnLike = [
+  '- table [ref=e3]:',
+  '  - row [ref=e5]:',
+  '    - link "Hacker News" [ref=e9]:',
+  '      - /url: news',
+  '    - text: new',
+  '  - row [ref=e12]:',
+  '    - cell "1." [ref=e13]',
+  '    - link "A story about parsers" [ref=e14]:',
+  '      - /url: https://x.test/a',
+  '    - text: 100 points by someone 2 hours ago',
+  '    - link "5 comments" [ref=e15]:',
+  '      - /url: item?id=1',
+].join('\n');
+
+test('outline: page without headings gets a Text excerpt in document order', () => {
+  const out = shapeOutline(snap(hnLike));
+  assert.match(out, /Headings: none\.\nText: Hacker News \| new \| A story about parsers \| 100 points by someone 2 hours ago \| 5 comments\n/);
+  assert.ok(out.indexOf('Text:') < out.indexOf('Top of tree:'));
+  // de-duplicated, '|' separators and one-char noise dropped
+  const dup = '- text: "|"\n- link "Go on" [ref=e1]\n- link "Go on" [ref=e2]\n- text: x';
+  assert.equal(textExcerpt(dup), 'Go on');
+  // list ordinals and items repeated 4+ times (boilerplate) are left out
+  const rep = ['- cell "1."', '- link "upvote"', '- link "Story"', '- link "upvote"', '- link "upvote"', '- link "upvote"', '- text: 12 500 kr'].join('\n');
+  assert.equal(textExcerpt(rep), 'Story | 12 500 kr');
+  // long pages: excerpt bounded and the whole outline respects the limit
+  const long = Array.from({ length: 300 }, (_, i) => `  - paragraph [ref=e${i}]: Sentence number ${i} of a long page`).join('\n');
+  const o2 = shapeOutline(snap(long));
+  const inner = o2.slice(o2.indexOf('### Snapshot (outline)'), o2.indexOf(OUTLINE_HINT));
+  assert.ok(inner.length < 1700, `outline too long: ${inner.length}`);
+  assert.ok(textExcerpt(long).length <= 600);
+  assert.ok(textExcerpt(long).startsWith('Sentence number 0 of a long page | Sentence number 1'));
+  assert.equal(shapeOutline(snap(long), { maxOutlineChars: 300 }).includes('[outline cut]'), true);
+});
+
+test('outline: pages with 3+ headings stay as before (no Text section)', () => {
+  const h = ['- heading "A" [level=1] [ref=e1]', '- heading "B" [level=2] [ref=e2]', '- heading "C" [level=2] [ref=e3]', '- paragraph: some text'].join('\n');
+  assert.ok(!shapeOutline(snap(h)).includes('Text:'));
+  assert.ok(shapeOutline(snap(yaml)).includes('Text:'));
 });

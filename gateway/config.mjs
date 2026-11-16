@@ -49,6 +49,7 @@ export function loadConfig() {
     dataDir: str('BRMCP_GATEWAY_DATA_DIR', '/var/lib/browserrenderer-gateway'),
     sessionIdleMs: int('BRMCP_SESSION_IDLE_MS', 3600000, { min: 1000 }),
     maxSessions: int('BRMCP_MAX_SESSIONS', 20, { min: 1 }),
+    sessionEvictIdleMs: int('BRMCP_SESSION_EVICT_IDLE_MS', 120000, { min: 0 }),
     upstreamCallTimeoutMs: int('BRMCP_UPSTREAM_TIMEOUT_MS', 120000, { min: 1000 }),
     smtp: {
       host: str('SMTP_HOST'),

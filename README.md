@@ -26,7 +26,11 @@ Debian 13 (trixie), fronted by a tunnel or reverse proxy. The MCP endpoint is
   header against `BRMCP_HOSTNAME` (exact, case-insensitive, 403 otherwise).
 - Each downstream MCP session gets its own upstream session (own browser context).
   Sessions idle for more than `BRMCP_SESSION_IDLE_MS` (default 1 h) are closed, which
-  frees the browser context. If the backend is down, `tools/list` still returns the
+  frees the browser context. At `BRMCP_MAX_SESSIONS` (default 20) a new client evicts one idle
+  session (not in flight, idle at least `BRMCP_SESSION_EVICT_IDLE_MS`, default 2 min; sessions that
+  never used the browser first, then the least recently active), and only gets 503 when none
+  qualifies. Clients such as claude.ai never close their sessions, so the cap would otherwise fill
+  up. If the backend is down, `tools/list` still returns the
   gateway tools and browser calls return a clear error.
 
 ## Gateway tools
@@ -57,10 +61,15 @@ parameter (every upstream argument still works when sent):
   `roles` (any role names, e.g. `["heading","img"]`), `name` (case-insensitive substring) and
   `viewport=true` (only elements visible now); given without `mode` they imply interactive.
   Without a `name` filter, a role+name repeated 4+ times collapses to one line with a count and
-  the first refs.
+  all its refs (first 60); with `urls=true` only items with the same URL collapse.
+  The default outline of a page with fewer than 3 headings adds a `Text:` excerpt (about 600
+  chars of visible text in document order) so such pages are not just counts.
 - `browser_find` is searched in the gateway and returns one line per match (`link "x" [ref=e5] ->
   url`, `[in ref=...]` for ref-less text), capped by `max_chars` (`BRMCP_FIND_CHARS`, default
   6000). `detail=true` returns the stock output with ancestor context; `filename` passes through.
+  The stock "Found N matches" counts matching lines, but snippets can hold several, so the gateway
+  states both ("Found 29 matching lines in 28 snippets") and its cap note counts snippets. An
+  ancestor path shared by the shown snippets is printed once as `Common path: ...`.
 - Action results (navigate, click, ...) drop the `### Snapshot` link to a `.yml` file on the
   server, which a remote client cannot open.
 - `browser_page_text` (gateway tool) reads visible text, optionally of a CSS `selector`, with
@@ -79,18 +88,23 @@ Every tool call logs one size line (never arguments or content), for example:
 
 `list tools=<n> chars=<n>` is logged on every `tools/list`.
 
+## Version
+
+The package has its own version (`package.json`, currently 0.1.0), independent of the pinned
+`@playwright/mcp` version in its dependencies. The gateway reports it as its MCP server version.
+
 ## Build
 
 Needs node/npm, `dpkg-deb`, `fakeroot`.
 
-    ./build.sh        # -> dist/browserrenderer-mcp_0.0.83-8_all.deb
+    ./build.sh        # -> dist/browserrenderer-mcp_0.1.0_all.deb (version from package.json)
 
 The build uses `npm ci` from the committed lockfile and `SOURCE_DATE_EPOCH` from the
 last git commit.
 
 ## Install
 
-    apt install ./browserrenderer-mcp_0.0.83-8_all.deb
+    apt install ./browserrenderer-mcp_0.1.0_all.deb
 
 Without dpkg: `./install.sh` (root, from a checkout). To expose it through
 Cloudflare, `scripts/install-cloudflared.sh` adds the official apt repo and installs
@@ -106,7 +120,10 @@ Edit `/etc/browserrenderer-mcp/browserrenderer-mcp.env`, then
 `systemctl restart browserrenderer-mcp` (restarts the gateway too).
 `BRMCP_HOSTNAME` (the public hostname, enforced by the gateway) is required: both
 services refuse to start without it.
-Other options: port, upstream (loopback) port, session idle timeout, `isolated|persistent`
+The file is a conffile, so edits survive upgrades and new settings are not added to it;
+`/usr/share/doc/browserrenderer-mcp/browserrenderer-mcp.env.default` always lists every
+current setting.
+Other options: port, upstream (loopback) port, session idle timeout, session limit and eviction, `isolated|persistent`
 profile, browser path, sandbox toggle, viewport, navigation timeout (default 30 s, under
 claude.ai's ~60 s per-call limit), extra flags (for the backend), listen address. The
 listen address defaults to `127.0.0.1`; set `BRMCP_BIND=0.0.0.0` only when the tunnel
