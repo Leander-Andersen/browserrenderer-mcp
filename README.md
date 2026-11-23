@@ -75,11 +75,28 @@ parameter (every upstream argument still works when sent):
 - `browser_page_text` (gateway tool) reads visible text, optionally of a CSS `selector`, with
   `max_chars` (`BRMCP_PAGE_TEXT_CHARS`, default 8000) and `offset` for paging.
 - `browser_take_screenshot` is downscaled and sent as JPEG by default (`resize`, default
-  `BRMCP_SCREENSHOT_SCALE=60` percent). With `target`, `element`, `filename` or `resize=1` it
-  goes to the stock tool unchanged. `browser_run_code_unsafe` is a plain pass-through.
+  `BRMCP_SCREENSHOT_SCALE=60` percent), for the viewport, `fullPage` (cut at 10000 CSS px, the
+  result text says so) and for one element (`target`: a ref or selector). An element smaller than
+  90000 CSS px^2 is left at full size as PNG unless `resize` is given. `resize=1` and `filename`
+  go to the stock tool unchanged (so does a `target` the gateway cannot resolve, such as a
+  `getByRole(...)` expression; the stock tool then reports any error itself). An `element`
+  argument without `target` is ignored (it only labels a target). Whenever the downscaled path
+  cannot be used the gateway logs `gateway: screenshot fallback reason=<code>` (never arguments
+  or content) and takes the stock path. `browser_run_code_unsafe` is a plain pass-through.
 - Any text part longer than `BRMCP_MAX_RESULT_CHARS` (default 40000) is cut with a note.
 - `BRMCP_CODEGEN` (default `none`) stops the backend echoing the Playwright code in results.
-- Tool listings drop `$schema`, the descriptive `element` arguments and verbose descriptions.
+- Tool listings drop `$schema`, the descriptive `element` arguments, `additionalProperties`,
+  annotation titles and annotation values equal to the MCP defaults, and verbose descriptions.
+- Only the commonly used upstream tools are listed (`BRMCP_DIRECT_TOOLS`, see below); the rest
+  (resize, close, console, network, emulate_media, file_upload, drop, drag, hover, and any
+  upstream tool added later) sit behind one tool, `browser_more`. Its description names them.
+  `browser_more {}` lists them with their arguments, `{tool}` returns one input schema and
+  `{tool, args}` calls it (`args: {}` for none), with the same handling as a direct call. The
+  size log line carries the real tool name (`call tool=browser_hover ...`). Calling a moved tool
+  directly by name still works, and so does `browser_more` for a listed tool. The server
+  instructions tell the model that a tool named in a result but not listed (e.g.
+  `browser_file_upload` in a modal-state hint) is called through `browser_more`.
+  The listing went from 30 tools / 19,357 chars to 21 tools / 10,952 chars.
 
 Every tool call logs one size line (never arguments or content), for example:
 
@@ -87,6 +104,13 @@ Every tool call logs one size line (never arguments or content), for example:
     gateway: call tool=browser_snapshot ms=412 text_chars=1873 images=0 image_b64_chars=0 raw_text_chars=47520 est_tokens=535 error=0
 
 `list tools=<n> chars=<n>` is logged on every `tools/list`.
+
+`BRMCP_DIRECT_TOOLS` (comma list of upstream tool names; default: navigate, navigate_back,
+snapshot, find, click, type, fill_form, press_key, select_option, take_screenshot, evaluate,
+wait_for, tabs, handle_dialog, run_code_unsafe) sets which upstream tools are listed directly.
+`BRMCP_DIRECT_TOOLS=all` lists all of them and drops `browser_more` (30 tools, 14,921 chars; the
+description trimming applies either way). `browser_page_text` and the watchlist/alert tools are
+always listed.
 
 ## Version
 

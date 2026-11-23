@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   splitSnapshot, shapeFull, shapeInteractive, shapeOutline, interactiveLines, capFind, FIND_SEP, capText, capResult,
-  parseEvalResult, formatPageText, compactFind, compileFindRegex, boxInViewport, stripSnapshotLink, stripSnapshotLinkResult, COLLAPSE_NOTE, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, OUTLINE_HINT, commonPath, textExcerpt,
+  parseEvalResult, formatPageText, compactFind, compileFindRegex, boxInViewport, stripSnapshotLink, stripSnapshotLinkResult, COLLAPSE_NOTE, buildPageTextFunction, buildScreenshotCode, trimTool, injectRequired, slimAnnotations, moreLine, moreIndex, moreSchema, OUTLINE_HINT, commonPath, textExcerpt,
 } from '../gateway/shape.mjs';
 
 const yaml = [
@@ -137,7 +137,7 @@ test('page text function embeds selector safely and evaluates', () => {
 
 test('screenshot code: validated interpolation only', () => {
   const code = buildScreenshotCode({ scale: 0.6, quality: 60, format: 'jpeg', fullPage: true });
-  assert.match(code, /const SCALE = 0\.6;/);
+  assert.match(code, /let scale = 0\.6;/);
   assert.match(code, /const FORMAT = "jpeg";/);
   assert.match(code, /const FULL = true;/);
   assert.match(code, /Math\.min\(10000/);
@@ -167,7 +167,8 @@ test('trimTool: $schema, element hidden, descriptions shortened, props kept', ()
   const { tool, elementRequired } = trimTool(up);
   assert.equal(tool.inputSchema.$schema, undefined);
   assert.deepEqual(Object.keys(tool.inputSchema.properties), ['target', 'doubleClick']);
-  assert.equal(tool.inputSchema.properties.target.description, 'Element ref from snapshot/find, or a unique selector');
+  assert.equal(tool.inputSchema.properties.target.description, 'Element ref (snapshot/find) or unique selector');
+  assert.equal(tool.inputSchema.additionalProperties, undefined);
   assert.deepEqual(tool.inputSchema.required, ['target']);
   assert.deepEqual(elementRequired, []);
   assert.ok(up.inputSchema.properties.element, 'input not mutated');
@@ -399,4 +400,37 @@ test('outline: pages with 3+ headings stay as before (no Text section)', () => {
   const h = ['- heading "A" [level=1] [ref=e1]', '- heading "B" [level=2] [ref=e2]', '- heading "C" [level=2] [ref=e3]', '- paragraph: some text'].join('\n');
   assert.ok(!shapeOutline(snap(h)).includes('Text:'));
   assert.ok(shapeOutline(snap(yaml)).includes('Text:'));
+});
+
+test('slimAnnotations: drops defaults and titles, keeps meaningful hints', () => {
+  const ann = (a) => slimAnnotations({ name: 'x', annotations: a }).annotations;
+  assert.equal(ann({ title: 'T', readOnlyHint: false, destructiveHint: true, openWorldHint: true }), undefined);
+  assert.deepEqual(ann({ title: 'T', readOnlyHint: true, destructiveHint: false, openWorldHint: true }), { readOnlyHint: true });
+  assert.deepEqual(ann({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+    { destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  assert.deepEqual(slimAnnotations({ name: 'x' }), { name: 'x' });
+  const src = { name: 'x', annotations: { title: 'T' } };
+  slimAnnotations(src);
+  assert.equal(src.annotations.title, 'T', 'input not mutated');
+});
+
+test('trimTool: dropped descriptions, fill_form item descriptions, hidden element kept out', () => {
+  const nav = trimTool({ name: 'browser_navigate', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'The URL to navigate to' } }, required: ['url'] } });
+  assert.equal(nav.tool.inputSchema.properties.url.description, undefined);
+  const ff = trimTool({ name: 'browser_fill_form', inputSchema: { type: 'object', properties: { fields: { type: 'array', description: 'x', items: { type: 'object',
+    properties: { target: { type: 'string', description: 'long' }, name: { type: 'string', description: 'Human-readable field name' }, value: { type: 'string', description: 'Value to fill' } } } } } } });
+  const it = ff.tool.inputSchema.properties.fields.items.properties;
+  assert.equal(it.name.description, undefined);
+  assert.equal(it.value.description, undefined);
+  assert.match(it.target.description, /^Element ref/);
+  assert.match(ff.tool.inputSchema.properties.fields.description, /checkbox/);
+});
+
+test('browser_more text: index with signatures, schema json', () => {
+  const t = { name: 'browser_resize', description: 'Resize the browser window\nmore', inputSchema: { type: 'object', properties: { width: { type: 'number' }, height: { type: 'number' }, x: {} }, required: ['width', 'height'] } };
+  assert.equal(moreLine(t), 'browser_resize {width, height, x?}: Resize the browser window');
+  assert.match(moreIndex([t, { name: 'browser_close', description: 'Close', inputSchema: { type: 'object', properties: {} } }]), /^browser_resize .*\nbrowser_close \{\}: Close\nCall: browser_more/);
+  assert.equal(moreIndex([]), 'No extra tools.');
+  assert.deepEqual(JSON.parse(moreSchema(t)), { name: 'browser_resize', description: t.description, inputSchema: t.inputSchema });
+  assert.ok(moreLine({ name: 'a', description: 'x'.repeat(300), inputSchema: {} }).length < 160);
 });

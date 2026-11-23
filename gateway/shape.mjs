@@ -510,30 +510,55 @@ export function formatPageText(obj, offset, maxChars) {
 
 const SHOT_FORMATS = new Set(['png', 'jpeg', 'webp']);
 
-export function buildScreenshotCode({ scale, quality, format, fullPage }) {
+export const SHOT_MAX_HEIGHT = 10000;
+export const SHOT_SMALL_ELEMENT_AREA = 90000; // CSS px^2: below this an element is left at full scale unless resize is given
+
+// Code for browser_run_code_unsafe: a downscaled CDP screenshot of the viewport, the full page, or one element.
+// format null = jpeg when scaled down, else png. autoScale (element only): small elements stay at scale 1.
+// The code returns { data, width, height, vw, vh, fmt, scale, ch } or { err: 'target' | 'box' }.
+export function buildScreenshotCode({ scale, quality, format, fullPage, target, autoScale = false }) {
   if (typeof scale !== 'number' || !Number.isFinite(scale) || scale < 0.1 || scale > 1) throw new Error('bad scale');
   if (!Number.isInteger(quality) || quality < 1 || quality > 100) throw new Error('bad quality');
-  if (!SHOT_FORMATS.has(format)) throw new Error('bad format');
+  if (format !== null && !SHOT_FORMATS.has(format)) throw new Error('bad format');
   if (typeof fullPage !== 'boolean') throw new Error('bad fullPage');
+  if (target !== undefined && (typeof target !== 'string' || target.length === 0 || target.length > 500)) throw new Error('bad target');
+  if (typeof autoScale !== 'boolean') throw new Error('bad autoScale');
   return `async (page) => {
-  const SCALE = ${scale};
+  let scale = ${scale};
   const QUALITY = ${quality};
   const FORMAT = ${JSON.stringify(format)};
   const FULL = ${fullPage ? 'true' : 'false'};
+  const TARGET = ${JSON.stringify(target ?? null)};
+  const AUTO = ${autoScale ? 'true' : 'false'};
+  let box = null;
+  if (TARGET !== null) {
+    const el = page.locator(/^(f\\d+)?e\\d+$/.test(TARGET) ? 'aria-ref=' + TARGET : TARGET);
+    try {
+      await el.scrollIntoViewIfNeeded({ timeout: 5000 });
+      box = await el.boundingBox({ timeout: 5000 });
+    } catch (e) { return { err: 'target' }; }
+    if (!box || !(box.width > 0) || !(box.height > 0)) return { err: 'box' };
+  }
   const s = await page.context().newCDPSession(page);
   try {
     const lm = await s.send('Page.getLayoutMetrics');
     const vv = lm.cssVisualViewport || lm.visualViewport;
     const vp = page.viewportSize() || { width: Math.round(vv.clientWidth), height: Math.round(vv.clientHeight) };
-    let x = vv.pageX || 0, y = vv.pageY || 0, w = vp.width, h = vp.height, beyond = false;
-    if (FULL) {
+    let x = vv.pageX || 0, y = vv.pageY || 0, w = vp.width, h = vp.height, beyond = false, ch = 0;
+    if (box) {
+      const bx = Math.floor(box.x), by = Math.floor(box.y); // whole pixels outward, like the stock element screenshot
+      x += bx; y += by; w = Math.ceil(box.x + box.width) - bx; h = Math.min(${SHOT_MAX_HEIGHT}, Math.ceil(box.y + box.height) - by); beyond = true;
+      if (AUTO && w * h < ${SHOT_SMALL_ELEMENT_AREA}) scale = 1;
+    } else if (FULL) {
       const c = lm.cssContentSize || lm.contentSize;
-      x = 0; y = 0; w = Math.ceil(c.width); h = Math.min(10000, Math.ceil(c.height)); beyond = true;
+      x = 0; y = 0; w = Math.ceil(c.width); h = Math.min(${SHOT_MAX_HEIGHT}, Math.ceil(c.height)); beyond = true;
+      if (Math.ceil(c.height) > h) ch = Math.ceil(c.height);
     }
-    const params = { format: FORMAT, clip: { x, y, width: w, height: h, scale: SCALE }, captureBeyondViewport: beyond };
-    if (FORMAT !== 'png') params.quality = QUALITY;
+    const fmt = FORMAT || (scale < 1 ? 'jpeg' : 'png');
+    const params = { format: fmt, clip: { x, y, width: w, height: h, scale }, captureBeyondViewport: beyond };
+    if (fmt !== 'png') params.quality = QUALITY;
     const r = await s.send('Page.captureScreenshot', params);
-    return { data: r.data, width: Math.round(w * SCALE), height: Math.round(h * SCALE), vw: vp.width, vh: vp.height };
+    return { data: r.data, width: Math.round(w * scale), height: Math.round(h * scale), vw: vp.width, vh: vp.height, fmt, scale, ch };
   } finally {
     await s.detach().catch(() => {});
   }
@@ -545,18 +570,11 @@ export const imageTokens = (w, h) => Math.min(1600, Math.round((w * h) / 750));
 // ---- tool-definition trimming ----
 
 const PROP_DESC = {
-  target: 'Element ref from snapshot/find, or a unique selector',
-  filename: 'Save to this file on the server instead of returning the result',
+  target: 'Element ref (snapshot/find) or unique selector',
+  filename: 'Save the result to this server file instead',
 };
 const TOOL_PROP_DESC = {
-  'browser_take_screenshot.scale': '"css" (default, CSS px) or "device" (device px, larger)',
-  'browser_take_screenshot.fullPage': 'Capture the whole scrollable page, not just the viewport',
-  'browser_take_screenshot.type': 'Image format; default jpeg when downscaled, otherwise png',
-  'browser_find.text': 'Case-insensitive substring to search for (use text or regex)',
-  'browser_find.regex': 'Regex to search for, e.g. "/error/i" for flags (use text or regex)',
   'browser_run_code_unsafe.code': 'JS function invoked with `page`, e.g. `async (page) => { return await page.title(); }`',
-  'browser_snapshot.boxes': 'Add [box=x,y,w,h] viewport-relative CSS px bounding boxes',
-  'browser_snapshot.depth': 'Limit the depth of the snapshot tree',
   'browser_evaluate.function': '`() => {...}` or `(element) => {...}` when target is given',
   'browser_console_messages.level': 'Minimum severity (includes more severe); default info',
   'browser_console_messages.all': 'All messages since session start, not just since last navigation',
@@ -567,14 +585,36 @@ const TOOL_PROP_DESC = {
   'browser_type.slowly': 'Type one character at a time (triggers key handlers); default fills at once',
   'browser_select_option.values': 'Value(s) to select',
   'browser_tabs.index': 'Tab index for close/select; omitted for close = current tab',
-  'browser_fill_form.fields': 'Fields to fill: target, name, type, value ("true"/"false" for checkbox, option text for combobox)',
   'browser_emulate_media.colorScheme': 'prefers-color-scheme',
   'browser_emulate_media.reducedMotion': 'prefers-reduced-motion',
   'browser_emulate_media.forcedColors': 'forced-colors',
   'browser_emulate_media.contrast': 'prefers-contrast',
   'browser_emulate_media.media': 'CSS media type',
   'browser_press_key.key': 'Key name or character, e.g. `ArrowLeft` or `a`',
+  'browser_navigate.url': null,
+  'browser_type.text': null,
+  'browser_type.submit': 'Press Enter after typing',
+  'browser_tabs.action': null,
+  'browser_tabs.url': 'URL for a new tab',
+  'browser_wait_for.time': 'Seconds to wait, at most 30',
+  'browser_wait_for.text': 'Text to wait for',
+  'browser_wait_for.textGone': 'Text to wait to disappear',
+  'browser_handle_dialog.accept': null,
+  'browser_handle_dialog.promptText': 'Text for a prompt dialog',
+  'browser_click.doubleClick': 'Double click',
+  'browser_click.button': 'Default left',
+  'browser_click.modifiers': 'Modifier keys to hold',
+  'browser_snapshot.depth': 'Subtree depth limit',
+  'browser_snapshot.boxes': 'Add [box=x,y,w,h] CSS px bounding boxes',
+  'browser_take_screenshot.scale': '"css" (default) or "device" (larger)',
+  'browser_take_screenshot.fullPage': 'Whole scrollable page',
+  'browser_take_screenshot.type': 'Default jpeg when downscaled, otherwise png',
+  'browser_find.text': 'Case-insensitive substring (text or regex)',
+  'browser_find.regex': 'Regex, e.g. "/error/i" for flags (text or regex)',
+  'browser_fill_form.fields': 'Fields to fill. value: "true"/"false" for checkbox, option text for combobox',
 };
+// Item properties of array params whose descriptions are redundant (the array's own description covers them).
+const ITEM_DESC_DROP = new Set(['browser_fill_form.fields']);
 const TOOL_DESC = {
   browser_emulate_media: 'Emulate CSS media features (e.g. dark color scheme). Omitted params stay unchanged; null clears an override.',
   browser_drop: 'Drop files or MIME-typed data onto an element. Provide "paths" and/or "data".',
@@ -603,10 +643,13 @@ export function trimTool(tool) {
       for (const ik of Object.keys(item.properties)) {
         if (HIDDEN_PROPS.has(ik) && !(item.required ?? []).includes(ik)) delete item.properties[ik];
         else if (PROP_DESC[ik] !== undefined) item.properties[ik].description = PROP_DESC[ik];
+        else if (ITEM_DESC_DROP.has(`${t.name}.${k}`)) delete item.properties[ik].description;
       }
     }
-    const d = TOOL_PROP_DESC[`${t.name}.${k}`] ?? PROP_DESC[k];
-    if (d !== undefined && props[k] && typeof props[k] === 'object') props[k].description = d;
+    const tk = `${t.name}.${k}`;
+    const d = Object.hasOwn(TOOL_PROP_DESC, tk) ? TOOL_PROP_DESC[tk] : PROP_DESC[k];
+    if (d === null && props[k] && typeof props[k] === 'object') delete props[k].description;
+    else if (d !== undefined && props[k] && typeof props[k] === 'object') props[k].description = d;
     else if (typeof props[k]?.description === 'string' && props[k].description.length > 90) {
       props[k].description = props[k].description.replace(/ Relative file names are resolved against the workspace root\./, '');
     }
@@ -616,8 +659,49 @@ export function trimTool(tool) {
     if (schema.required.length === 0) delete schema.required;
   }
   if (TOOL_DESC[t.name]) t.description = TOOL_DESC[t.name];
-  return { tool: t, elementRequired };
+  delete schema.additionalProperties;
+  return { tool: slimAnnotations(t), elementRequired };
 }
+
+// Drop annotation noise that equals the MCP defaults (or is meaningless): the title, destructiveHint=true,
+// openWorldHint=true, idempotentHint=false, and destructive/idempotent hints on read-only tools. Returns the tool.
+export function slimAnnotations(tool) {
+  const a = tool.annotations;
+  if (!a || typeof a !== 'object') return tool;
+  const ro = a.readOnlyHint === true;
+  const out = {};
+  if (ro) out.readOnlyHint = true;
+  if (!ro && a.destructiveHint === false) out.destructiveHint = false;
+  if (!ro && a.idempotentHint === true) out.idempotentHint = true;
+  if (a.openWorldHint === false) out.openWorldHint = false;
+  const t = { ...tool };
+  if (Object.keys(out).length) t.annotations = out; else delete t.annotations;
+  return t;
+}
+
+// ---- browser_more: the extra (unlisted) upstream tools ----
+
+const firstLine = (d, max = 140) => {
+  const l = String(d ?? '').split('\n')[0].trim();
+  return l.length > max ? `${l.slice(0, max - 3)}...` : l;
+};
+
+// "name {req, opt?}: description" line of one tool (its first description line).
+export function moreLine(tool) {
+  const props = Object.keys(tool.inputSchema?.properties ?? {});
+  const req = new Set(tool.inputSchema?.required ?? []);
+  const sig = props.map((p) => (req.has(p) ? p : `${p}?`)).join(', ');
+  return `${tool.name} {${sig}}: ${firstLine(tool.description)}`;
+}
+
+// Text for browser_more without a tool: one line per extra tool.
+export function moreIndex(tools) {
+  if (!tools.length) return 'No extra tools.';
+  return `${tools.map(moreLine).join('\n')}\nCall: browser_more {tool, args}. Schema: browser_more {tool}.`;
+}
+
+// Text for browser_more {tool}: the (trimmed) definition, as JSON.
+export const moreSchema = (tool) => JSON.stringify({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema });
 
 // Add placeholders for hidden-but-required props the client omitted.
 export function injectRequired(args, props) {
