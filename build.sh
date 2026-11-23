@@ -3,7 +3,8 @@
 set -eu
 cd "$(dirname "$0")"
 ROOT=$(pwd)
-VERSION=$(node -p "require('./package.json').version")
+# package.json uses semver (0.2.0-rc.1); Debian needs "~" so a pre-release sorts before the release (0.2.0~rc.1 < 0.2.0).
+VERSION=$(node -p "require('./package.json').version" | sed 's/-/~/')
 DEB="dist/browserrenderer-mcp_${VERSION}_all.deb"
 
 if SDE=$(git log -1 --format=%ct 2>/dev/null) && [ -n "$SDE" ]; then :; else SDE=1767225600; fi
