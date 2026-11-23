@@ -17,6 +17,7 @@ VIEWPORT="${BRMCP_VIEWPORT:-1440x900}"
 NAV_TIMEOUT="${BRMCP_NAV_TIMEOUT:-30000}"
 CODEGEN="${BRMCP_CODEGEN:-none}"
 EXTRA="${BRMCP_EXTRA_ARGS:-}"
+IDENTITY_FILE="${BRMCP_IDENTITY_FILE:-/etc/browserrenderer-mcp/identity.json}"
 
 die() { echo "browserrenderer-mcp: ERROR: $*" >&2; exit 78; }
 
@@ -61,12 +62,21 @@ export PLAYWRIGHT_BROWSERS_PATH
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 export HOME="${HOME:-$DATA_DIR}"
 
+# Browser identity: read the optional identity file (or build the default one) and
+# write the upstream config + init script. Invalid file: identity.mjs exits 78.
+# The viewport (file value, else BRMCP_VIEWPORT) travels in that config, so no --viewport-size below.
+IDENTITY_DIR="$DATA_DIR/identity"
+set -- --out "$IDENTITY_DIR" --viewport "$VIEWPORT" --file "$IDENTITY_FILE" --app "$APP_DIR"
+[ -z "${BRMCP_IDENTITY_FILE:-}" ] || set -- "$@" --require-file
+[ -z "$EXE" ] || set -- "$@" --exe "$EXE"
+node "$APP_DIR/bin/identity.mjs" "$@" || exit $?
+
 # Build argv safely: $@ holds the fixed args; EXTRA is intentionally word-split.
 set -- --headless --browser chromium \
   --host 127.0.0.1 --port "$UPSTREAM_PORT" \
   --allowed-hosts "127.0.0.1:$UPSTREAM_PORT" \
   --output-dir "$DATA_DIR/output" \
-  --viewport-size "$VIEWPORT" \
+  --config "$IDENTITY_DIR/config.json" \
   --timeout-navigation "$NAV_TIMEOUT" \
   --codegen "$CODEGEN" \
   --no-webmcp

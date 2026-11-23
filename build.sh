@@ -18,11 +18,11 @@ mkdir -p "$STAGE/opt/browserrenderer-mcp/bin" "$STAGE/opt/browserrenderer-mcp/ga
 APP="$STAGE/opt/browserrenderer-mcp"
 cp package.json package-lock.json "$APP/"
 (cd "$APP" && npm ci --omit=dev --no-audit --no-fund --ignore-scripts)
-cp packaging/bin/start.sh packaging/bin/install-bundled-chromium "$APP/bin/"
+cp packaging/bin/start.sh packaging/bin/install-bundled-chromium packaging/bin/identity.mjs packaging/bin/identity-lib.mjs "$APP/bin/"
 cp gateway/*.mjs "$APP/gateway/"
 cp packaging/etc/browserrenderer-mcp.env packaging/etc/notify.env "$STAGE/etc/browserrenderer-mcp/"
 cp packaging/systemd/browserrenderer-mcp.service packaging/systemd/browserrenderer-gateway.service "$STAGE/lib/systemd/system/"
-cp README.md "$STAGE/usr/share/doc/browserrenderer-mcp/"
+cp README.md packaging/etc/identity.example.json "$STAGE/usr/share/doc/browserrenderer-mcp/"
 # Always-current copy of the settings reference (the /etc one is a conffile and keeps admin edits on upgrade).
 cp packaging/etc/browserrenderer-mcp.env "$STAGE/usr/share/doc/browserrenderer-mcp/browserrenderer-mcp.env.default"
 sed "s/@VERSION@/$VERSION/" packaging/debian/control > "$STAGE/DEBIAN/control"
@@ -37,7 +37,7 @@ fi
 rm -f "$APP/node_modules/.package-lock.json"
 find "$STAGE" -type d -exec chmod 0755 {} +
 find "$STAGE" -type f -exec chmod 0644 {} +
-chmod 0755 "$APP/bin/start.sh" "$APP/bin/install-bundled-chromium" \
+chmod 0755 "$APP/bin/start.sh" "$APP/bin/install-bundled-chromium" "$APP/bin/identity.mjs" \
   "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/prerm" "$STAGE/DEBIAN/postrm"
 chmod 0640 "$STAGE/etc/browserrenderer-mcp/notify.env"
 for f in "$APP"/node_modules/.bin/*; do [ -e "$f" ] && chmod 0755 "$f" || true; done

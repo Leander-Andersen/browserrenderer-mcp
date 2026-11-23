@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+  "platform": "Linux x86_64",
+  "userAgentData": {
+    "brands": [{"brand": "Chromium", "version": "142"}, {"brand": "Not_A Brand", "version": "99"}],
+    "fullVersionList": [{"brand": "Chromium", "version": "142.0.7444.59"}, {"brand": "Not_A Brand", "version": "99.0.0.0"}],
+    "mobile": false,
+    "platform": "Linux",
+    "platformVersion": "6.12.0",
+    "architecture": "x86",
+    "bitness": "64",
+    "model": "",
+    "wow64": false
+  },
+  "languages": ["en-GB", "en"],
+  "timezone": "Europe/London",
+  "screen": {"width": 1920, "height": 1080},
+  "viewport": {"width": 1440, "height": 900},
+  "deviceScaleFactor": 1,
+  "colorScheme": "light"
+}

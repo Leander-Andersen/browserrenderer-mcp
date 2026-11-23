@@ -139,6 +139,54 @@ with empty values (alerts off). smtp2go works: `mail.smtp2go.com`, 587 or 2525 w
 The postinst resets the file to `root:brgateway` mode 0640 on every configure; keep it
 that way.
 
+## Browser identity
+
+Headless Chromium announces itself as `HeadlessChrome` in its User-Agent header and
+`navigator.userAgent`. Out of the box the service reports the normal Chromium user agent
+instead (`HeadlessChrome` replaced by `Chrome`, version taken from the installed browser
+at each start). Chromium's client hints (`Sec-CH-UA*`, `navigator.userAgentData`) already
+name `Chromium`, not `HeadlessChrome`, and are left alone.
+
+To present the same identity as your desktop browser, create
+`/etc/browserrenderer-mcp/identity.json` (readable by the `browserrenderer` user, for
+example `root:browserrenderer 0640`; change the path with `BRMCP_IDENTITY_FILE`) and restart.
+`/usr/share/doc/browserrenderer-mcp/identity.example.json` is a generic starting point. All
+fields are optional:
+
+| Field | Effect |
+|---|---|
+| `userAgent` | User-Agent header and `navigator.userAgent` (printable ASCII, max 512) |
+| `platform` | `navigator.platform` |
+| `userAgentData` | `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform` headers and `navigator.userAgentData` (`brands`, `mobile`, `platform`, and `getHighEntropyValues()` from `fullVersionList`, `platformVersion`, `architecture`, `bitness`, `model`, `wow64`) |
+| `languages` | `Accept-Language` header (with q-values) and `navigator.languages` / `language` (max 10 BCP47-style tags) |
+| `timezone` | IANA zone, e.g. `Europe/Oslo` |
+| `screen`, `viewport` | `{width, height}`, 100 to 10000. A `viewport` here wins over `BRMCP_VIEWPORT`; without one `BRMCP_VIEWPORT` applies |
+| `deviceScaleFactor` | 0.5 to 4 |
+| `colorScheme` | `light`, `dark` or `no-preference` |
+
+The file is checked at every start; a malformed file stops the service with exit 78 and a
+message in the journal (`BRMCP_IDENTITY_FILE` set to a missing file does too). The start
+logs one line, `identity: source=file|default userAgent=...`, and nothing else from the file.
+
+Notes and limits:
+
+- Without `userAgentData` (or with `null`, as for Firefox and Safari) the file is taken to
+  describe a browser without client hints: `navigator.userAgentData` is removed. Chromium
+  still sends its own `Sec-CH-UA*` headers on HTTPS pages, which cannot be suppressed from
+  config, so a non-Chromium user agent is only convincing for scripts, not for header checks.
+- Client hints that sites request through `Accept-CH` (full version list, platform version,
+  architecture, ...) are sent by Chromium itself; only `navigator.userAgentData` carries the
+  file's values for those.
+- `languages` sets the header and `navigator.languages`. The browser's `Intl` locale
+  (number and date formatting) stays that of the host, because Playwright's locale override
+  would replace the full `Accept-Language` list with a single tag.
+- The overrides are installed by an init script (`navigator.platform`, `languages`,
+  `userAgentData`) and request headers, so they apply to pages and iframes, not to web
+  workers. Nothing else is changed: `navigator.webdriver`, plugins, canvas, WebGL, audio and
+  fonts are untouched.
+- The generated config and script are written to `/var/lib/browserrenderer-mcp/identity/`
+  at each start.
+
 ## Update
 
 1. Bump `@playwright/mcp` in `package.json` (exact version). The gateway's dependencies
