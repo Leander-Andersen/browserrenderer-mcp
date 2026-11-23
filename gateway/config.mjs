@@ -11,6 +11,24 @@ function int(name, def, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
 }
 const str = (name, def = '') => (process.env[name] ?? def).trim().replace(/^(["'])(.*)\1$/, '$2').trim();
 
+// Upstream tools listed directly by default; the others are reached through browser_more.
+export const DEFAULT_DIRECT_TOOLS = [
+  'browser_navigate', 'browser_navigate_back', 'browser_snapshot', 'browser_find', 'browser_click', 'browser_type',
+  'browser_fill_form', 'browser_press_key', 'browser_select_option', 'browser_take_screenshot', 'browser_evaluate',
+  'browser_wait_for', 'browser_tabs', 'browser_handle_dialog', 'browser_run_code_unsafe',
+];
+
+// BRMCP_DIRECT_TOOLS: comma list of upstream tools to list directly; "all" lists every tool (no browser_more).
+// Returns a Set, or null for "all".
+export function parseDirectTools(raw) {
+  const v = (raw ?? '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+  if (v === '') return new Set(DEFAULT_DIRECT_TOOLS);
+  if (v.toLowerCase() === 'all') return null;
+  const names = v.split(',').map((n) => n.trim()).filter(Boolean);
+  for (const n of names) if (!/^[A-Za-z0-9_.-]{1,80}$/.test(n)) throw new Error('BRMCP_DIRECT_TOOLS must be "all" or a comma-separated list of tool names');
+  return new Set(names);
+}
+
 export function loadConfig() {
   const hostnames = str('BRMCP_HOSTNAME')
     .split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
@@ -67,6 +85,7 @@ export function loadConfig() {
     maxResultChars: int('BRMCP_MAX_RESULT_CHARS', 40000, { min: 1000 }),
     pageTextChars: int('BRMCP_PAGE_TEXT_CHARS', 8000, { min: 1, max: 200000 }),
     findChars: int('BRMCP_FIND_CHARS', 6000, { min: 1, max: 200000 }),
+    directTools: parseDirectTools(process.env.BRMCP_DIRECT_TOOLS),
     hostname: os.hostname(),
   };
 }

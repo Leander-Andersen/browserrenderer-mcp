@@ -4,7 +4,7 @@
 import {
   MAX_CHARS_LIMIT, errorResult, withText, resultText, textResult, shapeFull, shapeInteractive,
   shapeOutline, capFind, splitSnapshot, compactFind, parseEvalResult, buildPageTextFunction, formatPageText, buildScreenshotCode,
-  imageTokens, trimTool,
+  imageTokens, trimTool, SHOT_MAX_HEIGHT,
 } from './shape.mjs';
 
 export const PAGE_TEXT_NAME = 'browser_page_text';
@@ -31,6 +31,22 @@ export const PAGE_TEXT_DEF = {
   },
   annotations: { title: 'Read page text', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 };
+
+export const MORE_NAME = 'browser_more';
+// Definition of the browser_more tool for the given extra tool names.
+export const moreDef = (names) => ({
+  name: MORE_NAME,
+  description:
+    `Extra browser tools: ${names.join(', ')}. {} lists them with their arguments; {tool} returns one schema; ` +
+    '{tool, args} calls it (args {} when it takes none).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tool: { type: 'string', description: 'Extra tool name' },
+      args: { type: 'object', description: 'Arguments of that tool' },
+    },
+  },
+});
 
 const WRAPPED = {
   browser_snapshot: {
@@ -86,7 +102,7 @@ function intArg(v, name, { min, max }) {
 
 // Returns undefined when the tool is not wrapped, else { result, rawTextChars, capped, imageTokens? }.
 // capped=true means the handler applied its own size limits (skip the generic cap).
-export function createBrowserTools(cfg, callUpstream) {
+export function createBrowserTools(cfg, callUpstream, log = () => {}) {
   const A = (a) => (a && typeof a === 'object' && !Array.isArray(a) ? a : {});
 
   async function snapshot(args, x) {
@@ -171,34 +187,51 @@ export function createBrowserTools(cfg, callUpstream) {
     return { result: textResult(formatPageText(obj, offset, max)), rawTextChars: text.length, capped: true };
   }
 
+  // Fast path: a downscaled screenshot taken in the browser (viewport, full page or one element). Returns the tool
+  // result, or { fallback: '<code>' } when the stock tool has to take the shot (never arguments or content).
+  async function fastShot(rest, scale, autoScale, x) {
+    const format = rest.type === undefined ? null : rest.type;
+    if (format !== null && !SHOT_TYPES.includes(format)) return { fallback: 'bad_type' };
+    if (rest.fullPage !== undefined && typeof rest.fullPage !== 'boolean') return { fallback: 'bad_fullpage' };
+    if (rest.target !== undefined && (typeof rest.target !== 'string' || rest.target.length === 0 || rest.target.length > 500)) return { fallback: 'bad_target' };
+    if (rest.target !== undefined && rest.fullPage === true) return { fallback: 'fullpage_target' };
+    let res;
+    try {
+      const code = buildScreenshotCode({ scale, quality: SHOT_QUALITY, format, fullPage: rest.fullPage === true, target: rest.target, autoScale });
+      res = await callUpstream('browser_run_code_unsafe', { code }, x);
+    } catch {
+      return { fallback: 'upstream_error' };
+    }
+    if (res.isError) return { fallback: 'run_code_error' };
+    const o = parseEvalResult(resultText(res));
+    if (o && typeof o.err === 'string') return { fallback: o.err === 'target' ? 'target_not_found' : 'target_no_box' };
+    if (!o || typeof o.data !== 'string' || o.data.length === 0 || !Number.isFinite(o.width) || !Number.isFinite(o.height) || !SHOT_TYPES.includes(o.fmt)) {
+      return { fallback: 'bad_result' };
+    }
+    const what = rest.target !== undefined ? `of element (resize ${o.scale})` : `(resize ${o.scale} of ${o.vw}x${o.vh} viewport)`;
+    const cut = o.ch > 0 ? `; top ${SHOT_MAX_HEIGHT} of ${o.ch}px` : '';
+    const out = {
+      content: [
+        { type: 'text', text: `Screenshot ${o.width}x${o.height} ${o.fmt} ${what}${cut}` },
+        { type: 'image', data: o.data, mimeType: `image/${o.fmt}` },
+      ],
+    };
+    return { result: out, rawTextChars: out.content[0].text.length, capped: true, imageTokens: imageTokens(o.width, o.height) };
+  }
+
   async function screenshot(args, x) {
-    const { resize, ...rest } = A(args);
+    const { resize, ...a } = A(args);
     if (resize !== undefined && (typeof resize !== 'number' || !Number.isFinite(resize) || resize < 0.1 || resize > 1)) {
       return { result: errorResult('resize must be a number between 0.1 and 1') };
     }
+    // `element` is only the label of `target` upstream; clients that send it alone still mean the viewport.
+    const rest = a.target === undefined && a.element !== undefined ? Object.fromEntries(Object.entries(a).filter(([k]) => k !== 'element')) : a;
     const scale = resize ?? cfg.screenshotScalePct / 100;
-    const direct = rest.target !== undefined || rest.element !== undefined || rest.filename !== undefined || scale >= 1;
-    if (!direct) {
-      const format = rest.type === undefined ? 'jpeg' : rest.type;
-      if (SHOT_TYPES.includes(format) && (rest.fullPage === undefined || typeof rest.fullPage === 'boolean')) {
-        try {
-          const code = buildScreenshotCode({ scale, quality: SHOT_QUALITY, format, fullPage: rest.fullPage === true });
-          const res = await callUpstream('browser_run_code_unsafe', { code }, x);
-          const text = resultText(res);
-          const o = res.isError ? undefined : parseEvalResult(text);
-          if (o && typeof o.data === 'string' && o.data.length > 0 && Number.isFinite(o.width) && Number.isFinite(o.height)) {
-            const out = {
-              content: [
-                { type: 'text', text: `Screenshot ${o.width}x${o.height} ${format} (resize ${scale} of ${o.vw}x${o.vh} viewport)` },
-                { type: 'image', data: o.data, mimeType: `image/${format}` },
-              ],
-            };
-            return { result: out, rawTextChars: out.content[0].text.length, capped: true, imageTokens: imageTokens(o.width, o.height) };
-          }
-        } catch {
-          // fall through to the plain upstream call below
-        }
-      }
+    // filename: the file is written on the server, so the stock tool does it; scale 1: untouched stock image.
+    if (rest.filename === undefined && scale < 1) {
+      const r = await fastShot(rest, scale, resize === undefined, x);
+      if (r.result) return r;
+      log(`screenshot fallback reason=${r.fallback}`);
     }
     const res = await callUpstream('browser_take_screenshot', rest, x);
     return { result: res, rawTextChars: resultText(res).length };
