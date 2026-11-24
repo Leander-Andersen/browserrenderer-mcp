@@ -1,0 +1,29 @@
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "item": {
+     "@type": "Product",
+     "@id": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Black",
+     "name": "Sony WH-1000XM5 trådløs over-ear hodetelefoner",
+     "image": "https://media.pji.nu/6e9a8c31-b1aa-4411-8c8b-c34c766780cf.webp?height=280&width=280",
+     "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Black#prices",
+     "offers": {
+      "@type": "Offer",
+      "price": 2846,
+      "priceCurrency": "NOK"
+     },
+     "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": 3.03,
+      "reviewCount": 53
+     }
+    }
+   }
+  ]
+ }
+]
