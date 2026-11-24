@@ -1,0 +1,56 @@
+{
+ "sku": "1128753",
+ "content": {
+  "title": "Sony WH-1000XM6 trådløse over-ear hodetelefoner (grønn)",
+  "description": "Sony WH-1000XM6 trådløse over-ear-hodetelefoner gir støydemping med HD Processor QN3, 30mm-drivere, Hi-Res Audio, 40 timers-batteri, sammenleggbart design og flerpunktstilkobling for både lytting og klarhet under samtaler."
+ },
+ "classifications": {
+  "gtin": "4548736176751",
+  "manufacturerPartNumber": "WH1000XM6G.CE7"
+ },
+ "brand": {
+  "name": "Sony"
+ },
+ "price": {
+  "currency": "NOK",
+  "recurring": false,
+  "isClubPrice": false,
+  "current": [
+   3690,
+   2952
+  ],
+  "original": [
+   4990,
+   3992
+  ],
+  "showDiscount": true,
+  "disclaimer": "Før er laveste pris på elkjop.no siste 30 dager. Tilbudet gjelder 11.11 - 30.11.",
+  "isDiscounted": true,
+  "isCustom": false,
+  "discount": [
+   1300,
+   1040
+  ],
+  "isOutletPrice": false
+ },
+ "availability": {
+  "availableBItemGradeCount": 0,
+  "availableInStoreCount": 0,
+  "availableStoreStockCount": 3,
+  "availableInStoreCountForHomeDelivery": 0,
+  "stockThreshold": {
+   "display": "100+",
+   "incoming": "2026-11-23T23:00:00Z",
+   "inStock": true
+  },
+  "availableForCollectAtStoreCount": 3
+ },
+ "sellability": {
+  "isBuyableOnline": true,
+  "onlineStock": {
+   "inStock": true,
+   "level": "100+",
+   "incomingDate": 1795474800000
+  }
+ }
+}

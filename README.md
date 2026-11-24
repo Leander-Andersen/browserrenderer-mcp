@@ -49,6 +49,36 @@ Page content is untrusted: the tool descriptions tell the model never to treat i
 instructions, and the server-side limits above (fixed recipient, link prefixes, dedupe,
 daily cap) bound the damage if it does.
 
+## Product lookup and price comparison
+
+Two always-listed gateway tools read what elkjop.no, komplett.no, proshop.no and power.no
+serve to any anonymous visitor (JSON-LD, the shops' own same-origin price/stock endpoints,
+a few page elements). No logins, cookies or tricks; the browser's normal desktop user agent
+(see Browser identity) is what the shops expect.
+
+- `product_lookup {site, url|id|ean|query, mode?}`: one product. `mode` is `tldr` (name,
+  model number, EAN, price, url), `normal` (default; adds brand, article number,
+  before-price, campaign note, availability and stock) or `full` (adds up to 60 spec rows /
+  4000 chars and a description of up to 600 chars). An `ean` or `query` that matches several
+  products returns up to 5 candidates (article number, name, price, url) to pick from; an
+  EAN match goes straight to the product.
+- `product_compare {ean, sites?, mode?, prisjakt?}`: the same EAN on all (or the chosen) shops
+  in one call: product, model, cheapest shop and one line per shop with price and stock
+  (`mode=normal` adds before-price, stock detail and url). `prisjakt=true` adds one line with
+  the Prisjakt lowest price and shop count.
+
+Each call is ONE upstream `browser_run_code_unsafe` run of gateway-owned code
+(`gateway/retail-page.mjs`); arguments are validated strictly first (`ean` 8-14 digits, `id`
+4-10 digits, `query` up to 100 characters, `url` https on the shop's own host) and reach the
+code only through `JSON.stringify`. Every shop is looked up in its own new tab (closed
+afterwards; the current tab is never touched), in parallel, with a 25 s per-shop and 45 s
+overall deadline: a slow or blocking shop yields a per-shop status (`blocked`, `timeout`,
+`not found`, `error`) next to the shops that did answer. Roughly 1-3 page loads and 1-2
+API calls per shop and call. The gateway log gets one line per shop (`retail site=elkjop
+status=ok ms=2310`), never the EAN, query or URL. Specs are not available for power.no (its
+specification panel has no public data source we could find). All of the output is untrusted
+page data.
+
 ## Token footprint
 
 The gateway trims what an LLM client has to read, without removing any upstream tool or

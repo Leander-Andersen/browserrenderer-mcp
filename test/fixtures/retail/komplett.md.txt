@@ -1,0 +1,102 @@
+---
+title: "Sony WH-1000XM5 trådløse hodetelefoner, Over-Ear (sort)"
+sku: "1213311"
+language: "no"
+canonical_url: "https://www.komplett.no/product/1213311/tv-lyd-bilde/hodetelefoner-tilbehoer/hodetelefoner/sony-wh-1000xm5-traadloese-hodetelefoner-over-ear-sort"
+canonical_path: "/product/1213311/tv-lyd-bilde/hodetelefoner-tilbehoer/hodetelefoner/sony-wh-1000xm5-traadloese-hodetelefoner-over-ear-sort"
+brand: "SONY"
+description: "Aktiv støydemping, 30t batterilevetid, Quick charge, 8 mikrofoner"
+primary_image_url: "https://www.komplett.no/product-media/b2c/nb-no/1200/1213311.jpg"
+breadcrumb:
+  - "Forsiden"
+  - "TV, lyd & bilde"
+  - "Hodetelefoner & tilbehør"
+  - "Hodetelefoner"
+manufacturer_part_number: "WH1000XM5B.CE7"
+price: "3790.00"
+currency: "NOK"
+availability: "http://schema.org/InStock"
+stock: "20+ stk. på lager."
+rating_average: "4"
+rating_count: "82"
+---
+
+# Sony WH-1000XM5 trådløse hodetelefoner, Over-Ear (sort)
+
+Aktiv støydemping, 30t batterilevetid, Quick charge, 8 mikrofoner
+
+- Price: 3 790,-
+- Stock: 20+ stk. på lager.
+- SKU: 1213311
+- Brand: SONY
+- Rating: 4/5 from 82 reviews
+- Canonical URL: https://www.komplett.no/product/1213311/tv-lyd-bilde/hodetelefoner-tilbehoer/hodetelefoner/sony-wh-1000xm5-traadloese-hodetelefoner-over-ear-sort
+
+
+## Spesifikasjoner
+
+### Generelt
+
+- Modell: WH-1000XM5
+- Produktserie: Sony
+- Garanti (måneder): 24
+- EAN: 4548736132580
+
+### Lydsystem
+
+- Maks. driftsavstand: 10 m
+- Detaljer: Berøringsstyring
+- Anbefalt bruk: Bærbar elektronikk
+- Type: Hodetelefoner
+- Bluetooth lydkodek: LDAC, SBC, AAC
+
+### Lydutgang
+
+- Aktiv støyundertrykkelse: Ja
+- Magnetmateriale: Neodymium
+- Membrandiameter: 30 mm
+- Konnektivitetsgrensesnitt: 3,5 mm jakk
+- Frekvensrespons: 4 - 40000 Hz
+- Øredeltype for hovedtelefon: Full størrelse
+- Hodetelefonteknologi: Dynamisk
+- Avtakbar kabel: Ja
+- Trådløs teknologi: Bluetooth
+- Tilgjengelig mikrofon: Ja
+- Hodetelefonkopptype: Lukket
+- Bluetooth-versjon: Bluetooth 5.2
+- Detaljer: Speak-to-Chat, Google Fast Pair, Microsoft Swift Pair, Atmospheric Pressure Optimising, HD Noise Canceling Processor QN1, Quick Attention-funksjon
+- Lydeffekter: 360 Reality Audio, Digital Sound Enhancement Engine Extreme (DSEE Extreme), Ambient Sound Mode
+- Tilkobling: Trådløs, Kablet
+
+### Lydinngang
+
+- Mikrofonformfaktor: Innebygd
+- Inkludert antall: 8
+
+### Batteri
+
+- Batteritid: 32 time(r)
+- Oppladingstid: 3.5 time(r)
+- Oppladbart batteri: Oppladbar
+- Type: Batteri hodetelefon
+
+### Internet of Things (IoT)
+
+- kompatibel med Internet of Things (IoT): Ja
+- Intelligent assistent: Google Assistant, Alexa
+
+### Diverse
+
+- Fargekategori: Svart
+- Tilpassede standarder: JEITA
+- Farge: Svart
+- Medfølgende tilbehør: Kabel for hodetelefoner (1,2 m), Bæreveske, USB-ladekabel
+- Bluetooth-profiler: Serial Copy Management System (SCMS-T), Audio/Video Remote Control Profile (AVRCP), Advanced Audio Distribution Profile (A2DP), Headset Profile (HSP), Hands-Free Profile (HFP)
+
+### Tilkoblinger
+
+- Koblingstype: Hodetelefoner (minijack stereo 3,5 mm), USB (kun strøm), Bluetooth
+
+### Kabeldetaljer
+
+- Kab

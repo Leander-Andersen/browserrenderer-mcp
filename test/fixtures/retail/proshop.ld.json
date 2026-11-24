@@ -1,0 +1,28 @@
+[
+ {
+  "@context": "http://schema.org/",
+  "@type": "Product",
+  "name": "Sony WH-1000XM5 - Svart",
+  "description": "Opplev enestående støydemping med WH-1000XM5, der fire mikrofoner på hver side fanger opp bakgrunnsstøy med høy presisjon og gir dramatisk forbedret støydemping, spesielt i mellomtone- og diskantområdene.Førsteklasses lydkvalitetVår V1-prosessor og den banebrytende HD Noise Reduction Processor QN1 g",
+  "mpn": "WH1000XM5B.CE7",
+  "sku": "3083472",
+  "category": "Hodetelefoner",
+  "gtin13": "4548736132580",
+  "brand": {
+   "@type": "Brand",
+   "name": "Sony"
+  },
+  "offers": {
+   "@type": "Offer",
+   "url": "https://www.proshop.no/Hodetelefoner/Sony-WH-1000XM5-Svart/3083472",
+   "priceCurrency": "NOK",
+   "price": "3790.00",
+   "itemCondition": "http://schema.org/NewCondition",
+   "availability": "http://schema.org/InStock",
+   "seller": {
+    "@type": "Organization",
+    "name": "proshop.no"
+   }
+  }
+ }
+]

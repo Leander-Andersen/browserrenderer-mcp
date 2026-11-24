@@ -1,0 +1,45 @@
+{
+ "sku": "459129",
+ "content": {
+  "title": "Sony WH-1000XM5 trådløse around-ear hodetelefoner (sort/hardcase)",
+  "description": "Nyt favorittmusikken din i fred med Sony WH-1000XM5 trådløse around-ear hodetelefoner. De har Active Noise Cancelling, High-Resolution Audio, krystallklart stemmeopptak og totalt 30-timers lyttetid."
+ },
+ "classifications": {
+  "gtin": "4548736132580",
+  "manufacturerPartNumber": "WH1000XM5B.CE7"
+ },
+ "brand": {
+  "name": "Sony"
+ },
+ "price": {
+  "currency": "NOK",
+  "recurring": false,
+  "isDiscounted": false,
+  "isCustom": false,
+  "current": [
+   3790,
+   3032
+  ],
+  "isOutletPrice": false
+ },
+ "availability": {
+  "availableBItemGradeCount": 2,
+  "availableInStoreCount": 0,
+  "availableStoreStockCount": 118,
+  "availableInStoreCountForHomeDelivery": 0,
+  "stockThreshold": {
+   "display": "100+",
+   "incoming": "2026-11-25T23:00:00Z",
+   "inStock": true
+  },
+  "availableForCollectAtStoreCount": 117
+ },
+ "sellability": {
+  "isBuyableOnline": true,
+  "onlineStock": {
+   "inStock": true,
+   "level": "100+",
+   "incomingDate": 1795647600000
+  }
+ }
+}

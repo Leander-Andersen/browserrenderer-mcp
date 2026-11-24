@@ -1,0 +1,60 @@
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "@id": "https://www.elkjop.no/product/tv-lyd-og-smarte-hjem/hodetelefoner-og-tilbehor/hodetelefoner/sony-wh-1000xm5-tradlose-around-ear-hodetelefoner-sorthardcase/459129",
+  "name": "Sony WH-1000XM5 trådløse around-ear hodetelefoner (sort/hardcase)",
+  "description": "Nyt favorittmusikken din i fred med Sony WH-1000XM5 trådløse around-ear hodetelefoner. De har Active Noise Cancelling, High-Resolution Audio, krystallklart stemmeopptak og totalt 30-timers lyttetid.",
+  "url": "https://www.elkjop.no/product/tv-lyd-og-smarte-hjem/hodetelefoner-og-tilbehor/hodetelefoner/sony-wh-1000xm5-tradlose-around-ear-hodetelefoner-sorthardcase/459129",
+  "gtin": "4548736132580",
+  "mpn": "WH1000XM5B.CE7",
+  "itemCondition": "https://schema.org/NewCondition",
+  "sku": "459129",
+  "brand": {
+   "@type": "Brand",
+   "name": "Sony",
+   "url": "https://www.elkjop.no/brand/sony",
+   "logo": "https://next-media.elkjop.com/image/DV_PNG_NOCLIP_D180001256061/Brand/sony.png"
+  },
+  "additionalProperty": {
+   "@type": "PropertyValue",
+   "propertyID": "EcoVadis",
+   "name": "Supplier EcoVadis recognition",
+   "value": "Gold",
+   "image": "https://next-media.elkjop.com/image/DV_PNG_NOCLIP_D1800010021100047/Brand/sony.png",
+   "valueReference": {
+    "@type": "PropertyValue",
+    "name": "EcoVadis assessment valid from",
+    "value": "2025"
+   }
+  },
+  "offers": [
+   {
+    "@type": "Offer",
+    "name": "Standard Price",
+    "price": "3790",
+    "priceCurrency": "NOK",
+    "availability": "https://schema.org/InStock",
+    "itemCondition": "https://schema.org/NewCondition",
+    "url": "https://www.elkjop.no/product/tv-lyd-og-smarte-hjem/hodetelefoner-og-tilbehor/hodetelefoner/sony-wh-1000xm5-tradlose-around-ear-hodetelefoner-sorthardcase/459129",
+    "eligibleCustomerType": {
+     "@type": "BusinessEntityType",
+     "@id": "https://schema.org/Public"
+    }
+   },
+   {
+    "@type": "Offer",
+    "name": "Business Price (Excl. VAT)",
+    "price": "3032",
+    "priceCurrency": "NOK",
+    "availability": "https://schema.org/InStock",
+    "itemCondition": "https://schema.org/NewCondition",
+    "url": "https://www.elkjop.no/product/tv-lyd-og-smarte-hjem/hodetelefoner-og-tilbehor/hodetelefoner/sony-wh-1000xm5-tradlose-around-ear-hodetelefoner-sorthardcase/459129",
+    "eligibleCustomerType": {
+     "@type": "BusinessEntityType",
+     "@id": "https://schema.org/Business"
+    }
+   }
+  ]
+ }
+]

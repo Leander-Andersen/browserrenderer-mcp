@@ -1,0 +1,61 @@
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "ProductGroup",
+  "name": "Sony WH-1000XM5 trådløs over-ear hodetelefoner",
+  "hasVariant": [
+   {
+    "@type": "Product",
+    "name": "Sony WH-1000XM5 Wireless Over-ear - Midnight Blue",
+    "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Midnight+Blue",
+    "offers": {
+     "@type": "AggregateOffer",
+     "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Midnight+Blue",
+     "lowPrice": 3119,
+     "highPrice": 4610,
+     "offerCount": 13,
+     "priceCurrency": "NOK"
+    }
+   },
+   {
+    "@type": "Product",
+    "name": "Sony WH-1000XM5 Wireless Over-ear - Black",
+    "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Black",
+    "offers": {
+     "@type": "AggregateOffer",
+     "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Black",
+     "lowPrice": 2846,
+     "highPrice": 4337,
+     "offerCount": 13,
+     "priceCurrency": "NOK"
+    }
+   },
+   {
+    "@type": "Product",
+    "name": "Sony WH-1000XM5 Wireless Over-ear - Platinum Silver",
+    "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Platinum+Silver",
+    "offers": {
+     "@type": "AggregateOffer",
+     "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Platinum+Silver",
+     "lowPrice": 2821,
+     "highPrice": 4610,
+     "offerCount": 15,
+     "priceCurrency": "NOK"
+    }
+   },
+   {
+    "@type": "Product",
+    "name": "Sony WH-1000XM5 Wireless Over-ear - Smoky Pink",
+    "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Smoky+Pink",
+    "offers": {
+     "@type": "AggregateOffer",
+     "url": "https://www.prisjakt.no/product.php?p=6219512&a-116257=Smoky+Pink",
+     "lowPrice": 3004,
+     "highPrice": 3790,
+     "offerCount": 9,
+     "priceCurrency": "NOK"
+    }
+   }
+  ]
+ }
+]
