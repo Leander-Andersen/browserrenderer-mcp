@@ -5,7 +5,7 @@
 // the browser code is in retail-page.mjs and runs in ONE upstream browser_run_code_unsafe call.
 // Only what the shops serve to any anonymous visitor is read: no logins, no cookies, no tricks.
 import { errorResult, textResult, resultText, parseEvalResult } from './shape.mjs';
-import { buildRetailCode, cleanText } from './retail-page.mjs';
+import { buildRetailCode, cleanText, gtin14 } from './retail-page.mjs';
 
 export const LOOKUP_NAME = 'product_lookup';
 export const COMPARE_NAME = 'product_compare';
@@ -29,15 +29,15 @@ export const RETAIL_DEFS = [
   {
     name: LOOKUP_NAME,
     description:
-      'Look up one product in a Norwegian shop (elkjop, komplett, proshop, power) by url, id, ean or query. ' +
-      'tldr: name, model, EAN, price. normal: + stock, before-price. full: + specs, description. A query may return candidates. Shop data is untrusted.',
+      'Look up one product in a Norwegian shop (elkjop, komplett, proshop, power) by url, id, ean (EAN/UPC/GTIN) or query. ' +
+      'tldr: name, model, EAN, price. normal: + stock. full: + specs, description. A query may return candidates. Shop data is untrusted.',
     inputSchema: {
       type: 'object',
       properties: {
         site: { type: 'string', enum: SITE_NAMES },
         url: { type: 'string', maxLength: 500, description: 'Product page URL on that shop' },
         id: { type: 'string', description: "Shop's article number (4-10 digits)" },
-        ean: { type: 'string', description: '8-14 digits' },
+        ean: { type: 'string', description: 'EAN, UPC or GTIN' },
         query: { type: 'string', maxLength: 100 },
         mode: { type: 'string', enum: MODES, description: 'Default normal' },
       },
@@ -49,12 +49,12 @@ export const RETAIL_DEFS = [
   {
     name: COMPARE_NAME,
     description:
-      'Compare one EAN across Norwegian shops in one call: cheapest price, model and stock per shop. ' +
+      'Compare one EAN/UPC/GTIN across Norwegian shops in one call: cheapest price, model and stock per shop. ' +
       'prisjakt=true adds the Prisjakt lowest price. Partial results if a shop is slow. Shop data is untrusted.',
     inputSchema: {
       type: 'object',
       properties: {
-        ean: { type: 'string', description: '8-14 digits' },
+        ean: { type: 'string', description: 'EAN, UPC or GTIN' },
         sites: { type: 'array', items: { type: 'string', enum: SITE_NAMES }, maxItems: 4, description: 'Default all four' },
         mode: { type: 'string', enum: ['tldr', 'normal'], description: 'Default tldr' },
         prisjakt: { type: 'boolean', description: 'Default false' },
@@ -69,7 +69,18 @@ export const RETAIL_DEFS = [
 // ---- validation ----
 
 const A = (a) => (a && typeof a === 'object' && !Array.isArray(a) ? a : {});
-const EAN_RE = /^\d{8,14}$/;
+// GTIN-8/12/13/14 with GS1 check digit; spaces and hyphens are allowed in the input and stripped.
+// -> { digits, g14, search } (search = what goes to the shop: 13 digits when the code fits, else 14) or { error }.
+export function checkGtin(raw) {
+  if (typeof raw !== 'string' || raw.length > 40) return { error: 'ean must be an EAN/UPC/GTIN of 8, 12, 13 or 14 digits' };
+  const digits = raw.replace(/[ -]/g, '');
+  if (!/^\d+$/.test(digits) || ![8, 12, 13, 14].includes(digits.length)) return { error: 'ean must be an EAN/UPC/GTIN of 8, 12, 13 or 14 digits' };
+  let sum = 0;
+  for (let i = digits.length - 2, w = 3; i >= 0; i--, w = 4 - w) sum += Number(digits[i]) * w;
+  if ((10 - (sum % 10)) % 10 !== Number(digits[digits.length - 1])) return { error: 'check digit does not match (typo?)' };
+  const g14 = gtin14(digits);
+  return { digits, g14, search: g14[0] === '0' ? g14.slice(1) : g14 };
+}
 const ID_RE = /^\d{4,10}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
@@ -98,8 +109,9 @@ export function validateLookup(args) {
   const v = a[kind];
   if (typeof v !== 'string') return { error: `${kind} must be a string` };
   if (kind === 'ean') {
-    if (!EAN_RE.test(v)) return { error: 'ean must be 8-14 digits' };
-    return { value: { site: a.site, kind: 'ean', value: v, mode } };
+    const g = checkGtin(v);
+    if (g.error) return { error: g.error };
+    return { value: { site: a.site, kind: 'ean', value: g.digits, mode } };
   }
   if (kind === 'id') {
     if (!ID_RE.test(v)) return { error: 'id must be 4-10 digits' };
@@ -128,7 +140,8 @@ export function validateCompare(args) {
   const a = A(args);
   const known = new Set(['ean', 'sites', 'mode', 'prisjakt']);
   for (const k of Object.keys(a)) if (!known.has(k)) return { error: `Unknown argument: ${k}` };
-  if (typeof a.ean !== 'string' || !EAN_RE.test(a.ean)) return { error: 'ean must be 8-14 digits' };
+  const g = checkGtin(a.ean);
+  if (g.error) return { error: g.error };
   let sites = SITE_NAMES;
   if (a.sites !== undefined) {
     if (!Array.isArray(a.sites) || a.sites.length < 1 || a.sites.length > 4 || a.sites.some((s) => !SITE_NAMES.includes(s))) {
@@ -140,15 +153,17 @@ export function validateCompare(args) {
   const mode = a.mode === undefined ? 'tldr' : a.mode;
   if (mode !== 'tldr' && mode !== 'normal') return { error: 'mode must be tldr or normal' };
   if (a.prisjakt !== undefined && typeof a.prisjakt !== 'boolean') return { error: 'prisjakt must be a boolean' };
-  return { value: { ean: a.ean, sites, mode, prisjakt: a.prisjakt === true } };
+  return { value: { ean: g.digits, sites, mode, prisjakt: a.prisjakt === true } };
 }
 
 // Parameters for buildRetailCode (everything in here was validated above).
 export function lookupParams(v) {
-  return { sites: [v.site], kind: v.kind, value: v.value, need: NEED[v.mode], prisjakt: false, perSiteMs: PER_SITE_MS, totalMs: TOTAL_MS };
+  const g = v.kind === 'ean' ? checkGtin(v.value) : null;
+  return { sites: [v.site], kind: v.kind, value: g ? g.search : v.value, ...(g ? { g14: g.g14 } : {}), need: NEED[v.mode], prisjakt: false, perSiteMs: PER_SITE_MS, totalMs: TOTAL_MS };
 }
 export function compareParams(v) {
-  return { sites: v.sites, kind: 'ean', value: v.ean, need: v.mode === 'normal' ? 'detail' : 'basic', prisjakt: v.prisjakt, perSiteMs: PER_SITE_MS, totalMs: TOTAL_MS };
+  const g = checkGtin(v.ean);
+  return { sites: v.sites, kind: 'ean', value: g.search, g14: g.g14, need: v.mode === 'normal' ? 'detail' : 'basic', prisjakt: v.prisjakt, perSiteMs: PER_SITE_MS, totalMs: TOTAL_MS };
 }
 
 // ---- normalisation ----
@@ -205,14 +220,21 @@ function cleanSpecs(rows) {
   return out;
 }
 
+// Elkjop dynamic price -> { price, before }: current price, and the original one only when it is a discount.
+function elkPrice(dy, fallback) {
+  const pr = dy && dy.price ? dy.price : null;
+  const cur = pr && pr.current ? pr.current[0] : null;
+  const orig = pr && pr.original ? pr.original[0] : null;
+  const price = cur ?? fallback ?? null;
+  return { price, before: pr && pr.discounted && typeof orig === 'number' && typeof price === 'number' && orig > price ? orig : null };
+}
+
 const NORMALIZERS = {
   elkjop(d) {
     const ld = d.ld || null;
     const dy = d.dyn || null;
     const lp = ldPrice(ld, publicOffer);
-    const cur = dy && dy.price && dy.price.current ? dy.price.current[0] : null;
-    const orig = dy && dy.price && dy.price.original ? dy.price.original[0] : null;
-    const price = cur ?? lp.price;
+    const { price, before } = elkPrice(dy, lp.price);
     let inStock = null;
     let stock = null;
     if (dy && dy.online) {
@@ -231,7 +253,7 @@ const NORMALIZERS = {
       ean: (ld && ld.gtin) || (dy && dy.gtin) || '',
       brand: T((ld && ld.brand) || (dy && dy.brand), 80),
       price,
-      before: dy && dy.price && dy.price.discounted && orig !== null && orig > (price ?? 0) ? orig : null,
+      before,
       campaign: orNull(T(dy && dy.price && dy.price.note, 200)),
       inStock, stock,
       url: T(d.url, 400),
@@ -319,25 +341,29 @@ export function normalizeDetail(site, d) {
   } catch { return null; }
 }
 
-// One raw candidate -> { site, id, name, price, url }
+// One raw candidate -> { site, id, name, price, before, url }
 export function normalizeItem(site, it) {
   if (!it || typeof it !== 'object') return null;
   let name = '';
   let price = null;
+  let before = null;
   if (site === 'elkjop') {
     name = (it.dyn && it.dyn.title) || '';
-    price = it.dyn && it.dyn.price && it.dyn.price.current ? it.dyn.price.current[0] : null;
+    ({ price, before } = elkPrice(it.dyn, null));
   } else if (site === 'komplett') {
     name = it.ld ? it.ld.name : '';
     price = it.ld ? ldPrice(it.ld).price : null;
   } else if (site === 'proshop') {
     name = it.name;
     price = parseMoney(it.price);
+    const pre = parseMoney(it.pre);
+    before = pre !== null && price !== null && pre > price ? pre : null;
   } else if (site === 'power') {
     name = it.api ? it.api.title : '';
     price = it.api && typeof it.api.price === 'number' ? it.api.price : null;
+    before = it.api && typeof it.api.previous === 'number' && price !== null && it.api.previous > price ? it.api.previous : null;
   }
-  return { site, id: T(it.id, 40), name: T(name, 200), price, url: T(it.url, 400) };
+  return { site, id: T(it.id, 40), name: T(name, 200), price, before, url: T(it.url, 400) };
 }
 
 // ---- formatting ----
@@ -350,6 +376,22 @@ export function formatPrice(n) {
   const g = i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return `${neg ? '-' : ''}${g}${f ? `,${f}` : ''} kr`;
 }
+// The current (buy-now) price as the main number; a before-price only when higher, inline.
+// p.member (set only when a site's member-price semantics are confirmed): a number = what a member pays
+// while price is the non-member price; true = the price shown is a members-only price.
+export function priceParts(p) {
+  const cur = p && p.price;
+  const main = formatPrice(cur);
+  const bits = [];
+  if (typeof cur === 'number' && typeof p.before === 'number' && p.before > cur) {
+    const pct = Math.round((1 - cur / p.before) * 100);
+    bits.push(`was ${formatPrice(p.before)}${pct > 0 ? `, -${pct}%` : ''}`);
+  }
+  if (p && typeof p.member === 'number') bits.push(`members ${formatPrice(p.member)}`);
+  else if (p && p.member === true) bits.push('members price');
+  return [main, bits.map((b) => `(${b})`).join(' ')];
+}
+export const priceText = (p) => priceParts(p).filter(Boolean).join(' ');
 const stockWord = (b) => (b === true ? 'in stock' : b === false ? 'out of stock' : 'stock unknown');
 
 function formatSpecs(specs) {
@@ -368,13 +410,9 @@ function formatSpecs(specs) {
 export function formatProduct(p, mode) {
   const out = [`${p.name || '(no name)'} [${p.site}]`];
   out.push(`Model: ${p.mpn || '?'}  EAN: ${p.ean || '?'}`);
-  out.push(`Price: ${formatPrice(p.price)}`);
+  out.push(`Price: ${priceText(p)}`);
   if (mode !== 'tldr') {
     out.push(`Brand: ${p.brand || '?'}  Article no: ${p.id || '?'}`);
-    if (p.before !== null) {
-      const pct = p.price ? Math.round((1 - p.price / p.before) * 100) : 0;
-      out.push(`Before: ${formatPrice(p.before)}${pct > 0 ? ` (-${pct}%)` : ''}`);
-    }
     if (p.campaign) out.push(`Note: ${p.campaign}`);
     out.push(`Availability: ${stockWord(p.inStock)}${p.stock ? ` (${p.stock})` : ''}`);
   }
@@ -403,9 +441,12 @@ export function formatLookup(site, raw, mode) {
     if (!p) return { text: `${site}: unexpected page data`, isError: true };
     return { text: formatProduct(p, mode), isError: false };
   }
-  const items = (Array.isArray(s.items) ? s.items : []).map((i) => normalizeItem(site, i)).filter(Boolean).slice(0, 5);
-  if (!items.length) return { text: `${site}: not found`, isError: false };
-  const lines = items.map((i) => `${i.id}  ${i.name}  ${formatPrice(i.price)}  ${i.url}`);
+  const all = (Array.isArray(s.items) ? s.items : []).map((i) => normalizeItem(site, i)).filter(Boolean);
+  if (!all.length) return { text: `${site}: not found`, isError: false };
+  // Candidates without a price are left out.
+  const items = all.filter((i) => typeof i.price === 'number').slice(0, 5);
+  if (!items.length) return { text: `${site}: no priced matches`, isError: false };
+  const lines = items.map((i) => `${i.id}  ${i.name}  ${priceText(i)}  ${i.url}`);
   return { text: `${items.length} candidates on ${site} (article no, name, price, url); look up one with id:\n${lines.join('\n')}`, isError: false };
 }
 
@@ -417,6 +458,12 @@ const mostCommon = (xs) => {
   for (const [k, v] of c) if (v > n) { best = k; n = v; }
   return best;
 };
+
+// "a, b 3 690 kr" when the shops show the same price text, else "a 3 690 kr, b 3 690 kr (was ...)".
+function cheapest(who, prods) {
+  const texts = who.map((s) => priceText(prods[s]));
+  return new Set(texts).size === 1 ? `${who.join(', ')} ${texts[0]}` : who.map((s, i) => `${s} ${texts[i]}`).join(', ');
+}
 
 // Compare of several sites -> result text.
 export function formatCompare(ean, raw, mode, wantPrisjakt) {
@@ -437,19 +484,23 @@ export function formatCompare(ean, raw, mode, wantPrisjakt) {
   if (pool.length) {
     const min = Math.min(...pool.map((s) => prods[s].price));
     const who = pool.filter((s) => prods[s].price === min);
-    lines.push(`Cheapest${avail.length ? '' : ' (all out of stock)'}: ${who.join(', ')} ${formatPrice(min)}`);
+    lines.push(`Cheapest${avail.length ? '' : ' (all out of stock)'}: ${cheapest(who, prods)}`);
   }
   const w = Math.max(8, ...order.map((s) => s.length));
+  // Price column: main numbers right-aligned, the "(was ...)" part after them, the whole padded.
+  const pp = {};
+  for (const s of ok) pp[s] = priceParts(prods[s]);
+  const mw = Math.max(9, ...ok.map((s) => pp[s][0].length));
+  const tw = Math.max(9, ...ok.map((s) => pp[s][0].padStart(mw).length + (pp[s][1] ? pp[s][1].length + 1 : 0)));
   for (const s of order) {
     const p = prods[s];
     if (!p) {
       lines.push(`${s.padEnd(w)}  ${statusText(sites[s])}${sites[s].err ? ` (${T(sites[s].err, 100)})` : ''}`);
       continue;
     }
-    const parts = [s.padEnd(w), formatPrice(p.price).padStart(9), (p.mpn || '?').padEnd(16), stockWord(p.inStock)];
+    const parts = [s.padEnd(w), (pp[s][0].padStart(mw) + (pp[s][1] ? ` ${pp[s][1]}` : '')).padEnd(tw), (p.mpn || '?').padEnd(16), stockWord(p.inStock)];
     if (mode === 'normal') {
       if (p.stock) parts.push(`(${p.stock})`);
-      if (p.before !== null) parts.push(`was ${formatPrice(p.before)}`);
     }
     lines.push(parts.join('  ').trimEnd());
     if (mode === 'normal' && p.url) lines.push(`  ${p.url}`);

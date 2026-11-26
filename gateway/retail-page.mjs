@@ -18,6 +18,13 @@ export function cleanText(s, max) {
   return t.length > max ? t.slice(0, Math.max(0, max - 1)).trimEnd() + '…' : t;
 }
 
+// Any GTIN-8/12/13/14 (digits, or anything holding 8-14 digits) -> 14 digits left-padded with zeros, else ''.
+// Shops store the same code with different lengths, so codes are only ever compared in this form.
+export function gtin14(s) {
+  const d = typeof s === 'string' || typeof s === 'number' ? String(s).replace(/\D/g, '') : '';
+  return d.length >= 8 && d.length <= 14 ? d.padStart(14, '0') : '';
+}
+
 // JSON-LD script texts -> trimmed schema.org Product objects (@graph, arrays and ItemList entries are walked).
 export function trimLd(texts) {
   const out = [];
@@ -195,7 +202,7 @@ export function parsePrisjakt(searchTexts, productTexts) {
 }
 
 // The program. page = the user's current tab (never navigated); every site gets its own new tab.
-// P = { sites, kind: ean|id|query, value, need: basic|detail|full, prisjakt, perSiteMs, totalMs }.
+// P = { sites, kind: ean|id|query, value (for ean: the EAN-13/GTIN-14 search form), g14 (ean: the code as 14 digits), need: basic|detail|full, prisjakt, perSiteMs, totalMs }.
 // Returns { v, ms, sites: { site: { status, ms, detail?, items?, err? } }, prisjakt? }.
 export async function retailMain(page, P) {
   const t0 = Date.now();
@@ -283,7 +290,7 @@ export async function retailMain(page, P) {
         if (!m || seen.has(m[1])) continue;
         seen.add(m[1]);
         out.push({ id: m[1], href });
-        if (out.length >= 6) break;
+        if (out.length >= 8) break;
       }
       return out;
     });
@@ -291,14 +298,20 @@ export async function retailMain(page, P) {
     const ds = await dyn(found.map((f) => f.id));
     const items = found.map((f, i) => ({ id: f.id, url: new URL(f.href, base).href, dyn: ds[i] }));
     let hit = null;
-    if (q.kind === 'ean') hit = items.find((x) => x.dyn && x.dyn.gtin === q.value) || null;
+    if (q.kind === 'ean') hit = items.find((x) => x.dyn && gtin14(x.dyn.gtin) === q.g14) || null;
     else if (items.length === 1) hit = items[0];
     if (q.kind === 'ean' && !hit) return { status: 'not_found' };
     if (hit) {
       if (full) { const d = await product(hit.id); if (d) return { status: 'ok', detail: d }; }
       return { status: 'ok', detail: { id: hit.id, url: hit.url, dyn: hit.dyn } };
     }
-    return { status: 'ok', items: items.slice(0, 5) };
+    // Candidates: one more batch for those without a price (an accessory the first batch had no price for).
+    const noPrice = items.filter((x) => !(x.dyn && x.dyn.price && x.dyn.price.current && typeof x.dyn.price.current[0] === 'number'));
+    if (noPrice.length) {
+      const ds2 = await dyn(noPrice.map((x) => x.id)).catch(() => []);
+      noPrice.forEach((x, i) => { if (ds2[i] && ds2[i].price && ds2[i].price.current) x.dyn = ds2[i]; });
+    }
+    return { status: 'ok', items: items.slice(0, 8) };
   };
 
   // ---- komplett.no ----
@@ -340,7 +353,7 @@ export async function retailMain(page, P) {
     const prods = (await lds(tab)).filter((p) => p.sku && hostOk(p.url, 'www.komplett.no'));
     if (!prods.length) return { status: 'not_found' };
     let hit = null;
-    if (q.kind === 'ean') hit = prods.find((p) => p.gtin === q.value) || null;
+    if (q.kind === 'ean') hit = prods.find((p) => gtin14(p.gtin) === q.g14) || null;
     else if (prods.length === 1) hit = prods[0];
     if (q.kind === 'ean' && !hit) return { status: 'not_found' };
     if (hit) {
@@ -348,7 +361,7 @@ export async function retailMain(page, P) {
       const d = await productAt(hit.url);
       return d ? { status: 'ok', detail: d } : { status: 'not_found' };
     }
-    return { status: 'ok', items: prods.slice(0, 5).map((p) => ({ id: p.sku, url: p.url, ld: p })) };
+    return { status: 'ok', items: prods.slice(0, 8).map((p) => ({ id: p.sku, url: p.url, ld: p })) };
   };
 
   // ---- proshop.no ----
@@ -402,14 +415,15 @@ export async function retailMain(page, P) {
       const h = li.querySelector('h2');
       const pr = li.querySelector('.site-currency-campaign, .site-currency-lg, .site-currency-attention');
       const st = li.querySelector('.site-stock-text');
-      return { href: a ? a.getAttribute('href') || '' : '', name: h ? h.textContent || '' : '', price: pr ? pr.textContent || '' : '', stock: st ? st.textContent || '' : '' };
+      const pre = li.querySelector('.site-currency-pre');
+      return { href: a ? a.getAttribute('href') || '' : '', name: h ? h.textContent || '' : '', price: pr ? pr.textContent || '' : '', pre: pre ? pre.textContent || '' : '', stock: st ? st.textContent || '' : '' };
     }));
-    const cs = cards.filter((c) => lastDigits(c.href)).map((c) => ({ id: lastDigits(c.href), url: new URL(c.href, base).href, name: cleanText(c.name, 200), price: cleanText(c.price, 40), stock: cleanText(c.stock, 80) }));
+    const cs = cards.filter((c) => lastDigits(c.href)).map((c) => ({ id: lastDigits(c.href), url: new URL(c.href, base).href, name: cleanText(c.name, 200), price: cleanText(c.price, 40), pre: cleanText(c.pre, 40), stock: cleanText(c.stock, 80) }));
     if (!cs.length) return { status: 'not_found' };
     if (q.kind === 'ean') {
       for (const c of cs.slice(0, 2)) {
         const d = await productAt(c.url);
-        if (d && d.ld.gtin === q.value) return { status: 'ok', detail: d };
+        if (d && gtin14(d.ld.gtin) === q.g14) return { status: 'ok', detail: d };
       }
       return { status: 'not_found' };
     }
@@ -417,7 +431,7 @@ export async function retailMain(page, P) {
       const d = await productAt(cs[0].url);
       return d ? { status: 'ok', detail: d } : { status: 'not_found' };
     }
-    return { status: 'ok', items: cs.slice(0, 5) };
+    return { status: 'ok', items: cs.slice(0, 8) };
   };
 
   // ---- power.no (plain HTTP through the browser context; no page load) ----
@@ -446,12 +460,22 @@ export async function retailMain(page, P) {
     if (q.kind === 'ean') {
       for (const api of list.slice(0, 3)) {
         const d = await detailOf(api);
-        if (d.detail.ld && d.detail.ld.gtin === q.value) return d;
+        if (d.detail.ld && gtin14(d.detail.ld.gtin) === q.g14) return d;
       }
       return { status: 'not_found' };
     }
     if (list.length === 1) return detailOf(list[0]);
-    return { status: 'ok', items: list.slice(0, 5).map((p) => ({ id: p.id, url: base + p.url, api: p })) };
+    // Candidates: one batch request fills the price of those the list gave none for.
+    const noPrice = list.filter((p) => p.price === null);
+    if (noPrice.length) {
+      const b = jsonOf((await get(base + '/api/v2/products?ids=' + noPrice.map((p) => ENC(p.id)).join(',') + '&allowWebStatus8=true').catch(() => ({ text: '' }))).text);
+      for (const raw of Array.isArray(b) ? b : []) {
+        const t = trimPower(raw);
+        const x = t && noPrice.find((p) => p.id === t.id);
+        if (x && t.price !== null) { x.price = t.price; x.previous = t.previous; x.club = t.club; }
+      }
+    }
+    return { status: 'ok', items: list.slice(0, 8).map((p) => ({ id: p.id, url: base + p.url, api: p })) };
   };
 
   // ---- prisjakt.no (compare only) ----
@@ -483,7 +507,7 @@ export async function retailMain(page, P) {
     let out;
     try {
       tab = await ctx.newPage();
-      const work = SITES[site](tab, { kind: site === 'prisjakt' ? 'ean' : P.kind, value: P.value });
+      const work = SITES[site](tab, { kind: site === 'prisjakt' ? 'ean' : P.kind, value: P.value, g14: P.g14 });
       work.catch(() => {});
       out = await Promise.race([work, new Promise((res) => { timer = setTimeout(() => res({ status: 'timeout' }), budget); })]);
     } catch (e) {
@@ -515,7 +539,7 @@ export async function retailMain(page, P) {
   return res;
 }
 
-const EMBEDDED = [cleanText, trimLd, ldFromHtml, trimElkDyn, trimPower, parseKomplettMd, parsePrisjakt, retailMain];
+const EMBEDDED = [cleanText, gtin14, trimLd, ldFromHtml, trimElkDyn, trimPower, parseKomplettMd, parsePrisjakt, retailMain];
 
 // P: validated parameter object (see retail.mjs). Embedded values only ever go through JSON.stringify.
 export function buildRetailCode(P) {
