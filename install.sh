@@ -12,10 +12,11 @@ ETC=/etc/browserrenderer-mcp
 D=/var/lib/browserrenderer-mcp
 G=/var/lib/browserrenderer-gateway
 
-mkdir -p "$APP/bin" "$APP/gateway" "$ETC"
+mkdir -p "$APP/bin" "$APP/gateway/ui" "$ETC"
 cp package.json package-lock.json "$APP/"
 (cd "$APP" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --omit=dev --no-audit --no-fund --ignore-scripts)
 install -m 0644 gateway/*.mjs "$APP/gateway/"
+install -m 0644 gateway/ui/* "$APP/gateway/ui/"
 install -m 0755 packaging/bin/start.sh packaging/bin/install-bundled-chromium packaging/bin/identity.mjs "$APP/bin/"
 install -m 0644 packaging/bin/identity-lib.mjs "$APP/bin/"
 [ -e "$ETC/browserrenderer-mcp.env" ] || install -m 0644 packaging/etc/browserrenderer-mcp.env "$ETC/"

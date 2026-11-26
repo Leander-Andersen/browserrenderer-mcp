@@ -13,7 +13,7 @@ export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 STAGE="$ROOT/staging"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/opt/browserrenderer-mcp/bin" "$STAGE/opt/browserrenderer-mcp/gateway" "$STAGE/etc/browserrenderer-mcp" \
+mkdir -p "$STAGE/opt/browserrenderer-mcp/bin" "$STAGE/opt/browserrenderer-mcp/gateway/ui" "$STAGE/etc/browserrenderer-mcp" \
   "$STAGE/lib/systemd/system" "$STAGE/DEBIAN" "$STAGE/usr/share/doc/browserrenderer-mcp"
 
 APP="$STAGE/opt/browserrenderer-mcp"
@@ -21,6 +21,7 @@ cp package.json package-lock.json "$APP/"
 (cd "$APP" && npm ci --omit=dev --no-audit --no-fund --ignore-scripts)
 cp packaging/bin/start.sh packaging/bin/install-bundled-chromium packaging/bin/identity.mjs packaging/bin/identity-lib.mjs "$APP/bin/"
 cp gateway/*.mjs "$APP/gateway/"
+cp gateway/ui/* "$APP/gateway/ui/"
 cp packaging/etc/browserrenderer-mcp.env packaging/etc/notify.env "$STAGE/etc/browserrenderer-mcp/"
 cp packaging/systemd/browserrenderer-mcp.service packaging/systemd/browserrenderer-gateway.service "$STAGE/lib/systemd/system/"
 cp README.md packaging/etc/identity.example.json "$STAGE/usr/share/doc/browserrenderer-mcp/"
