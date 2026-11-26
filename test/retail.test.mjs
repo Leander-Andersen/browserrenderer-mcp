@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {
   RETAIL_DEFS, RETAIL_NAMES, validateLookup, validateCompare, lookupParams, compareParams, parseMoney, formatPrice,
-  normalizeDetail, normalizeItem, formatProduct, formatLookup, formatCompare, createRetailTools, stockTextIn, idFromUrl,
+  normalizeDetail, normalizeItem, formatProduct, checkGtin, priceText, formatLookup, formatCompare, createRetailTools, stockTextIn, idFromUrl,
 } from '../gateway/retail.mjs';
 import {
-  buildRetailCode, cleanText, trimLd, ldFromHtml, trimElkDyn, trimPower, parseKomplettMd, parsePrisjakt, retailMain,
+  buildRetailCode, cleanText, gtin14, trimLd, ldFromHtml, trimElkDyn, trimPower, parseKomplettMd, parsePrisjakt, retailMain,
 } from '../gateway/retail-page.mjs';
 
 const fx = (f) => fs.readFileSync(new URL(`./fixtures/retail/${f}`, import.meta.url), 'utf8');
@@ -152,7 +152,7 @@ test('one hanging site times out, the rest come back, every tab is closed', asyn
       };
     },
   };
-  const P = { sites: ['elkjop', 'power', 'komplett'], kind: 'ean', value: EAN, need: 'basic', prisjakt: false, perSiteMs: 150, totalMs: 400 };
+  const P = { sites: ['elkjop', 'power', 'komplett'], kind: 'ean', value: EAN, g14: '0'.repeat(14 - EAN.length) + EAN, need: 'basic', prisjakt: false, perSiteMs: 150, totalMs: 400 };
   const t0 = Date.now();
   const out = await retailMain({ context: () => ctx }, P);
   assert.ok(Date.now() - t0 < 2000);
@@ -162,7 +162,7 @@ test('one hanging site times out, the rest come back, every tab is closed', asyn
   assert.equal(out.sites.power.detail.api.price, 3790);
   assert.equal(closed.length, 3, 'every opened tab is closed');
   const text = formatCompare(EAN, out, 'tldr', false);
-  assert.match(text, /power\s+3 790 kr\s+WH1000XM5B\.CE7\s+in stock/);
+  assert.match(text, /power\s+3 790 kr \(was 4 490 kr, -16%\)\s+WH1000XM5B\.CE7\s+in stock/);
   assert.match(text, /elkjop\s+timed out/);
   assert.match(text, /komplett\s+timed out/);
 });
@@ -361,11 +361,12 @@ test('formatProduct tldr / normal / full', () => {
   const tldr = formatProduct(p, 'tldr');
   assert.match(tldr, /Model: WH1000XM5B\.CE7/);
   assert.match(tldr, /EAN: 4548736132580/);
-  assert.match(tldr, /Price: 3 790 kr/);
+  assert.match(tldr, /Price: 3 790 kr \(was 4 990 kr, -24%\)\n/);
   assert.ok(!/Brand|Before|Availability|Specs/.test(tldr));
   const normal = formatProduct(p, 'normal');
   assert.match(normal, /Brand: Sony {2}Article no: 1/);
-  assert.match(normal, /Before: 4 990 kr \(-24%\)/);
+  assert.ok(!/Before/.test(normal));
+  assert.match(normal, /^Price: 3 790 kr \(was 4 990 kr, -24%\)$/m);
   assert.match(normal, /Note: Tilbud til 30\.11/);
   assert.match(normal, /Availability: in stock \(online 100\+, 118 stores\)/);
   assert.ok(!/Specs|Description/.test(normal));
@@ -423,7 +424,7 @@ test('formatCompare normal adds stock detail, before price and url; prisjakt add
   raw.sites.elkjop.detail.dyn = trimElkDyn(fj('elkjop.dyn.discount.json'));
   raw.prisjakt = { status: 'ok', ms: 5000, detail: { name: 'x', url: 'https://www.prisjakt.no/product.php?p=1', low: 2846, shops: 13 } };
   const text = formatCompare(EAN, raw, 'normal', true);
-  assert.match(text, /elkjop\s+3 690 kr .*\(online 100\+, 3 stores\) {2}was 4 990 kr/);
+  assert.match(text, /elkjop\s+3 690 kr \(was 4 990 kr, -26%\) {2}WH1000XM5B\.CE7 +in stock {2}\(online 100\+, 3 stores\)\n/);
   assert.match(text, /\n {2}https:\/\/www\.elkjop\.no\/p\/459129\n/);
   assert.match(text, /\nPrisjakt: lowest 2 846 kr at 13 shops$/);
   raw.prisjakt = { status: 'timeout', ms: 25000 };
@@ -442,7 +443,7 @@ test('formatCompare: nothing found, out-of-stock cheapest, ties', () => {
 
 test('formatLookup: product, candidates, statuses', () => {
   const ok = formatLookup('power', { sites: { power: { status: 'ok', detail: { id: '1478246', url: 'u', api: trimPower(fj('power.api.json')[0]), ld: ldOf('power.ld.json')[0] } } } }, 'tldr');
-  assert.match(ok.text, /^Sony WH-1000XM5 .* \[power\]\nModel: WH1000XM5B\.CE7 {2}EAN: 4548736132580\nPrice: 3 790 kr\nu$/);
+  assert.match(ok.text, /^Sony WH-1000XM5 .* \[power\]\nModel: WH1000XM5B\.CE7 {2}EAN: 4548736132580\nPrice: 3 790 kr \(was 4 490 kr, -16%\)\nu$/);
   const items = Array.from({ length: 7 }, (_, i) => ({ id: String(1000 + i), url: `https://www.power.no/p-${1000 + i}/`, api: { title: `Item ${i}`, price: 100 + i } }));
   const c = formatLookup('power', { sites: { power: { status: 'ok', items } } }, 'normal');
   assert.match(c.text, /^5 candidates on power/);
@@ -497,4 +498,194 @@ test('handlers reject bad arguments without calling upstream and report backend 
   const e = await err.handle('product_lookup', { site: 'power', ean: EAN }, {});
   assert.equal(e.result.isError, true);
   assert.ok(!e.result.content[0].text.includes(EAN));
+});
+
+// ---- GTIN family codes ----
+
+test('checkGtin: GS1 check digit for 8, 12, 13 and 14 digits, padding and the shop search form', () => {
+  const ok = (c) => { const g = checkGtin(c); assert.ok(!g.error, `${c}: ${g.error}`); return g; };
+  const gtin8 = ok('96385074');
+  assert.equal(gtin8.g14, '00000096385074');
+  assert.equal(gtin8.search, '0000096385074', 'padded to 13 for the shop search');
+  const upc = ok('036000291452');
+  assert.equal(upc.g14, '00036000291452');
+  assert.equal(upc.search, '0036000291452');
+  const ean = ok('4006381333931');
+  assert.equal(ean.g14, '04006381333931');
+  assert.equal(ean.search, '4006381333931');
+  const g14 = ok('04006381333931');
+  assert.equal(g14.search, '4006381333931', 'one leading zero of a GTIN-14 is dropped');
+  const real14 = ok('14006381333938');
+  assert.equal(real14.search, '14006381333938', 'a real GTIN-14 stays 14 digits');
+  for (const bad of ['96385075', '036000291453', '4006381333932', '14006381333939']) {
+    assert.equal(checkGtin(bad).error, 'check digit does not match (typo?)', bad);
+  }
+});
+
+test('checkGtin: separators are stripped, everything else is rejected', () => {
+  assert.equal(checkGtin('4006381 333931').digits, '4006381333931');
+  assert.equal(checkGtin('4-006381-333931').digits, '4006381333931');
+  assert.equal(checkGtin(' 036000-291452 ').digits, '036000291452');
+  for (const bad of ['', '1234567', '123456789', '12345678901', '123456789012345', '4006381333931a', '4006381333931\n', '4006381333931;rm', '4006381.333931', '４００６３８１３３３９３１', null, 4006381333931, {}, 'x'.repeat(100)]) {
+    assert.ok(checkGtin(bad).error, `rejects ${JSON.stringify(bad)}`);
+  }
+  assert.deepEqual(validateCompare({ ean: '4006381333932' }), { error: 'check digit does not match (typo?)' });
+  assert.equal(validateLookup({ site: 'power', ean: '4006381333932' }).error, 'check digit does not match (typo?)');
+  assert.equal(validateLookup({ site: 'power', ean: '036000-291452' }).value.value, '036000291452');
+  assert.equal(validateCompare({ ean: '0360 0029 1452' }).value.ean, '036000291452');
+});
+
+test('code parameters carry the shop search form and the 14-digit form of the code', () => {
+  const u = lookupParams(validateLookup({ site: 'power', ean: '036000291452' }).value);
+  assert.equal(u.value, '0036000291452');
+  assert.equal(u.g14, '00036000291452');
+  const c = compareParams(validateCompare({ ean: '14006381333938' }).value);
+  assert.equal(c.value, '14006381333938');
+  assert.equal(c.g14, '14006381333938');
+  assert.equal(lookupParams(validateLookup({ site: 'power', query: 'x' }).value).g14, undefined);
+  assert.equal(gtin14('3600029'), '', 'too short');
+  assert.equal(gtin14('0036000291452'), '00036000291452');
+});
+
+test('an EAN given as UPC-A matches a shop that stores it as 13 digits with a leading 0', async () => {
+  const ld = fj('power.ld.json')[0];
+  ld['@graph'].find((n) => n['@type'] === 'Product').gtin13 = '0036000291452';
+  const ctx = {
+    request: {
+      get: async (u) => ({
+        status: () => 200,
+        text: async () => (u.includes('productlists')
+          ? JSON.stringify({ products: fj('power.api.json') })
+          : `<html><script type="application/ld+json">${JSON.stringify(ld)}</script></html>`),
+      }),
+    },
+    newPage: async () => ({ close: async () => {} }),
+  };
+  const g = checkGtin('036000291452');
+  const P = { sites: ['power'], kind: 'ean', value: g.search, g14: g.g14, need: 'basic', prisjakt: false, perSiteMs: 2000, totalMs: 4000 };
+  const out = await retailMain({ context: () => ctx }, P);
+  assert.equal(out.sites.power.status, 'ok');
+  assert.ok(out.sites.power.detail, 'matched on the padded forms');
+  const miss = await retailMain({ context: () => ctx }, { ...P, g14: '00036000291469' });
+  assert.equal(miss.sites.power.status, 'not_found');
+  assert.match(formatCompare('036000291452', out, 'tldr', false), /^EAN 036000291452: /);
+});
+
+// ---- price display ----
+
+test('priceText: current price first, before-price inline only when higher, member forms', () => {
+  assert.equal(priceText({ price: 3790, before: null }), '3 790 kr');
+  assert.equal(priceText({ price: 3790 }), '3 790 kr');
+  assert.equal(priceText({ price: 3690, before: 4990 }), '3 690 kr (was 4 990 kr, -26%)');
+  assert.equal(priceText({ price: 3790, before: 3790 }), '3 790 kr', 'not higher: no was');
+  assert.equal(priceText({ price: 3790, before: 3000 }), '3 790 kr');
+  assert.equal(priceText({ price: 999, before: 1000 }), '999 kr (was 1 000 kr)', 'percent rounds to 0: omitted');
+  assert.equal(priceText({ price: null, before: 100 }), '?');
+  assert.equal(priceText({ price: 3790, member: 3490 }), '3 790 kr (members 3 490 kr)');
+  assert.equal(priceText({ price: 3790, member: true }), '3 790 kr (members price)');
+  assert.equal(priceText({ price: 3690, before: 4990, member: 3490 }), '3 690 kr (was 4 990 kr, -26%) (members 3 490 kr)');
+});
+
+test('candidate lines use the same price display; before-prices come from each source', () => {
+  const el = normalizeItem('elkjop', { id: '1', url: 'u', dyn: trimElkDyn(fj('elkjop.dyn.discount.json')) });
+  assert.equal(priceText(el), '3 690 kr (was 4 990 kr, -26%)');
+  const pw = normalizeItem('power', { id: '2', url: 'u', api: { title: 'x', price: 2490, previous: 2790 } });
+  assert.equal(priceText(pw), '2 490 kr (was 2 790 kr, -11%)');
+  const ps = normalizeItem('proshop', { id: '3', url: 'u', name: 'x', price: '1 199,-', pre: '1 499,-' });
+  assert.equal(priceText(ps), '1 199 kr (was 1 499 kr, -20%)');
+  assert.equal(priceText(normalizeItem('proshop', { id: '3', url: 'u', name: 'x', price: '1 199,-', pre: '' })), '1 199 kr');
+  const c = formatLookup('power', { sites: { power: { status: 'ok', items: [{ id: '2', url: 'https://www.power.no/p-2/', api: { title: 'x', price: 2490, previous: 2790 } }] } } }, 'tldr');
+  assert.match(c.text, /2 {2}x {2}2 490 kr \(was 2 790 kr, -11%\) {2}https:\/\/www\.power\.no\/p-2\//);
+});
+
+test('formatCompare: discounted site keeps columns aligned in tldr and normal; cheapest line marks the discount', () => {
+  const raw = compareRaw();
+  raw.sites.elkjop.detail.dyn = trimElkDyn(fj('elkjop.dyn.discount.json'));
+  raw.sites.komplett.detail.ld.offers[0].price = '999';
+  for (const mode of ['tldr', 'normal']) {
+    const text = formatCompare(EAN, raw, mode, false);
+    const lines = text.split('\n').filter((l) => /^(elkjop|komplett)\s/.test(l));
+    assert.equal(lines.length, 2);
+    const col = (l) => l.indexOf('WH1000XM5B.CE7');
+    assert.equal(col(lines[0]), col(lines[1]), `model column aligned in ${mode}\n${text}`);
+    assert.match(lines[0], /^elkjop\s+3 690 kr \(was 4 990 kr, -26%\)\s+WH1000XM5B/);
+    assert.match(lines[1], /^komplett\s+999 kr\s+WH1000XM5B/);
+    assert.ok(!/ was 4 990 kr$/m.test(text), 'no separate trailing was part');
+    assert.match(text, /\nCheapest: komplett 999 kr\n/);
+  }
+  const tie = compareRaw();
+  tie.sites.elkjop.detail.dyn = trimElkDyn(fj('elkjop.dyn.discount.json'));
+  assert.match(formatCompare(EAN, tie, 'tldr', false), /\nCheapest: elkjop 3 690 kr \(was 4 990 kr, -26%\), komplett 3 690 kr\n/);
+  const solo = compareRaw();
+  solo.sites.komplett.detail.ld.offers[0].price = '4000';
+  solo.sites.elkjop.detail.dyn = trimElkDyn(fj('elkjop.dyn.discount.json'));
+  assert.match(formatCompare(EAN, solo, 'tldr', false), /\nCheapest: elkjop 3 690 kr \(was 4 990 kr, -26%\)\n/);
+});
+
+// ---- candidate lists: price fill and drop ----
+
+test('candidates: unpriced ones are filled from the site batch (power), then dropped when still unpriced', async () => {
+  const reqs = [];
+  const list = [
+    { productId: 1, title: 'Headphones', price: 3790, url: '/p-1/' },
+    { productId: 2, title: 'Case', price: null, url: '/p-2/' },
+    { productId: 3, title: 'Cable', price: null, url: '/p-3/' },
+  ];
+  const ctx = {
+    request: {
+      get: async (u) => {
+        reqs.push(u);
+        const body = u.includes('productlists') ? { products: list } : [{ productId: 2, title: 'Case', price: 299, previousPrice: 399 }];
+        return { status: () => 200, text: async () => JSON.stringify(body) };
+      },
+    },
+    newPage: async () => ({ close: async () => {} }),
+  };
+  const P = { sites: ['power'], kind: 'query', value: 'sony', need: 'detail', prisjakt: false, perSiteMs: 2000, totalMs: 4000 };
+  const out = await retailMain({ context: () => ctx }, P);
+  assert.equal(reqs.length, 2, 'one list request plus ONE batch request');
+  assert.match(reqs[1], /\/api\/v2\/products\?ids=2,3&allowWebStatus8=true$/);
+  const f = formatLookup('power', out, 'normal');
+  assert.match(f.text, /^2 candidates on power/);
+  assert.match(f.text, /1 {2}Headphones {2}3 790 kr {2}/);
+  assert.match(f.text, /2 {2}Case {2}299 kr \(was 399 kr, -25%\) {2}/);
+  assert.ok(!/Cable/.test(f.text), 'candidate without a price is left out');
+});
+
+test('candidates: elkjop fetches missing prices in one more tRPC batch', async () => {
+  const evalUrls = [];
+  const dyn = (sku, price) => ({ result: { data: { sku, content: { title: `P${sku}` }, price: price === null ? {} : { current: [price, price * 0.8], original: [price + 100, 1], isDiscounted: true } } } });
+  const inputOf = (u) => JSON.parse(decodeURIComponent(/input=(.*)$/.exec(u)[1]));
+  const tab = {
+    goto: async () => ({ status: () => 200 }),
+    waitForSelector: async () => true,
+    title: async () => 'x',
+    url: () => 'https://www.elkjop.no/search?q=x',
+    $$eval: async () => ['11', '22', '33'].map((id) => ({ id, href: `/product/x/${id}` })),
+    evaluate: async (fn, [u]) => {
+      evalUrls.push(u);
+      const skus = Object.values(inputOf(u)).map((v) => v.sku);
+      if (evalUrls.length === 1) return skus.map((k) => dyn(k, k === '11' ? 3790 : null));
+      return skus.map((k) => dyn(k, k === '22' ? 299 : null));
+    },
+    close: async () => {},
+  };
+  const ctx = { request: {}, newPage: async () => tab };
+  const P = { sites: ['elkjop'], kind: 'query', value: 'x', need: 'detail', prisjakt: false, perSiteMs: 2000, totalMs: 4000 };
+  const out = await retailMain({ context: () => ctx }, P);
+  assert.equal(evalUrls.length, 2, 'first batch plus one more for the unpriced');
+  assert.equal(Object.keys(inputOf(evalUrls[1])).length, 2);
+  const f = formatLookup('elkjop', out, 'normal');
+  assert.match(f.text, /^2 candidates on elkjop/);
+  assert.match(f.text, /11 {2}P11 {2}3 790 kr \(was 3 890 kr, -3%\)/);
+  assert.match(f.text, /22 {2}P22 {2}299 kr/);
+  assert.ok(!/P33/.test(f.text));
+});
+
+test('candidates: nothing priced says "no priced matches", nothing at all says "not found"', () => {
+  const items = [{ id: '1', url: 'u', api: { title: 'Case', price: null } }, { id: '2', url: 'u', api: { title: 'Cable' } }];
+  assert.equal(formatLookup('power', { sites: { power: { status: 'ok', items } } }, 'normal').text, 'power: no priced matches');
+  assert.equal(formatLookup('power', { sites: { power: { status: 'ok', items: [] } } }, 'normal').text, 'power: not found');
+  const ek = [{ id: '1', url: 'u', dyn: trimElkDyn({ sku: '1', content: { title: 'Acc' } }) }];
+  assert.equal(formatLookup('elkjop', { sites: { elkjop: { status: 'ok', items: ek } } }, 'tldr').text, 'elkjop: no priced matches');
 });
