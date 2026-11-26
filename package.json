@@ -1,6 +1,6 @@
 {
   "name": "browserrenderer-mcp-vendor",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0-rc.3",
   "private": true,
   "scripts": { "test": "node --test test/*.test.mjs" },
   "description": "Vendored stock @playwright/mcp for the browserrenderer-mcp package",
