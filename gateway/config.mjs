@@ -1,5 +1,6 @@
 // Gateway configuration, read once from the environment (systemd EnvironmentFile).
 import os from 'node:os';
+import { validTeamHost } from './access.mjs';
 
 function int(name, def, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
   const raw = process.env[name];
@@ -59,7 +60,18 @@ export function loadConfig() {
     throw new Error('BRMCP_SNAPSHOT_MODE must be outline, interactive or full');
   }
 
+  // Price compare page: needs the Access team + AUD, or BRMCP_UI_AUTH=off on a loopback bind (local testing).
+  const accessTeam = str('BRMCP_ACCESS_TEAM').toLowerCase();
+  const accessAud = str('BRMCP_ACCESS_AUD');
+  if (accessTeam && !validTeamHost(accessTeam)) throw new Error('BRMCP_ACCESS_TEAM must be a hostname such as example.cloudflareaccess.com');
+  if (accessAud && !/^[A-Za-z0-9._-]{8,128}$/.test(accessAud)) throw new Error('BRMCP_ACCESS_AUD must be the Access application AUD tag');
+  const uiAuth = str('BRMCP_UI_AUTH', 'on').toLowerCase();
+  if (uiAuth !== 'on' && uiAuth !== 'off') throw new Error('BRMCP_UI_AUTH must be on or off');
+  if (uiAuth === 'off' && bind !== '127.0.0.1') throw new Error('BRMCP_UI_AUTH=off is only allowed with BRMCP_BIND=127.0.0.1 (loopback)');
+  const ui = { authOff: uiAuth === 'off', team: accessTeam, aud: accessAud, enabled: uiAuth === 'off' || Boolean(accessTeam && accessAud) };
+
   return {
+    ui,
     hostnames,
     bind,
     port: int('BRMCP_PORT', 8931, { min: 1, max: 65535 }),

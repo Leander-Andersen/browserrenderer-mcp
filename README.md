@@ -79,6 +79,43 @@ status=ok ms=2310`), never the EAN, query or URL. Specs are not available for po
 specification panel has no public data source we could find). All of the output is untrusted
 page data.
 
+## Price compare page
+
+A small web page on the same hostname (`https://<BRMCP_HOSTNAME>/`) for comparing a product
+across Elkjøp, Komplett, Proshop and Power (and optionally Prisjakt). One search box takes a
+product code (EAN/UPC/GTIN with a valid check digit), a shop article number, a product URL
+of one of the shops, or free text (then a shop picker chooses where to search and you pick
+one of up to 5 matches). Each shop fills in as it answers. It is fully keyboard-driven
+(press `?` for the shortcuts) and can scan a barcode with the camera where the browser has
+`BarcodeDetector`. It reuses the `product_lookup` / `product_compare` code, so nothing about
+the shops is duplicated.
+
+It is disabled until you set both values, and it is only reachable through Cloudflare
+Access: the gateway verifies the `Cf-Access-Jwt-Assertion` JWT (RS256, issuer, audience,
+expiry) on every request to `/` and `/ui/`, and answers 403 otherwise. `/mcp` is untouched.
+
+1. Cloudflare dashboard, Security > WAF > Custom rules: add an exception (action Skip) for
+   requests where the URI path is `/` or starts with `/ui/`, so browser requests are not
+   blocked by bot or managed rules. Access still applies to these paths.
+2. Zero Trust > Access > Applications > your application for this hostname > Overview
+   (Basic information): copy the **Application Audience (AUD) Tag**. Your team domain is
+   `<team-name>.cloudflareaccess.com`.
+3. In `/etc/browserrenderer-mcp/browserrenderer-mcp.env` add:
+
+   ```
+   BRMCP_ACCESS_TEAM=your-team.cloudflareaccess.com
+   BRMCP_ACCESS_AUD=<the AUD tag>
+   ```
+
+   then `systemctl restart browserrenderer-mcp`. The gateway log says `ui enabled` (or
+   `ui disabled (...)` when a value is missing).
+
+Limits: 2 API requests at once and 60 per minute (429 beyond that), results cached for 10
+minutes. The page's API calls run in the gateway's own upstream browser session, separate
+from the MCP sessions. `BRMCP_UI_AUTH=off` exists for local testing only and is refused
+unless the gateway listens on `127.0.0.1`. The page is served with a strict
+Content-Security-Policy (no inline script or style) and renders shop data as plain text only.
+
 ## Token footprint
 
 The gateway trims what an LLM client has to read, without removing any upstream tool or

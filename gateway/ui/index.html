@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Price compare</title>
+<link rel="icon" type="image/svg+xml" href="/ui/icon.svg">
+<link rel="stylesheet" href="/ui/app.css">
+<script src="/ui/app.js" defer></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <h1>Price compare</h1>
+    <button type="button" id="help-btn" class="link-btn" aria-haspopup="dialog" aria-controls="help">Shortcuts <kbd>?</kbd></button>
+  </header>
+
+  <form id="search" role="search" autocomplete="off">
+    <label class="vh" for="q">Search</label>
+    <div class="line">
+      <input id="q" name="q" type="text" inputmode="search" enterkeyhint="search" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="300" placeholder="Product code, article number, shop URL or text">
+      <button type="submit" class="primary">Search</button>
+    </div>
+    <div class="opts">
+      <label class="opt">
+        <span class="cap">Search in</span>
+        <select id="shop">
+          <option value="elkjop">Elkjøp</option>
+          <option value="komplett">Komplett</option>
+          <option value="proshop">Proshop</option>
+          <option value="power">Power</option>
+        </select>
+      </label>
+      <label class="opt">
+        <span class="cap">Code type</span>
+        <select id="ctype">
+          <option value="auto">Auto</option>
+          <option value="ean13">EAN-13</option>
+          <option value="upca">UPC-A</option>
+          <option value="gtin14">GTIN-14</option>
+        </select>
+      </label>
+      <label class="opt check">
+        <input type="checkbox" id="pj">
+        <span>Prisjakt</span>
+      </label>
+      <button type="button" id="cam" class="secondary" hidden>Scan barcode</button>
+    </div>
+  </form>
+
+  <div id="scan" class="scan" hidden>
+    <video id="video" playsinline muted></video>
+    <div class="scan-bar">
+      <span>Point the camera at a barcode.</span>
+      <button type="button" id="scan-stop" class="secondary">Cancel</button>
+    </div>
+  </div>
+
+  <p id="note" class="note" hidden></p>
+  <div id="live" class="vh" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <section id="recent" class="recent" aria-labelledby="recent-h" hidden>
+    <div class="sec-head">
+      <h2 id="recent-h">Recent searches</h2>
+      <button type="button" id="recent-clear" class="link-btn">Clear</button>
+    </div>
+    <ul id="recent-list" class="chips"></ul>
+  </section>
+
+  <section id="cands" class="cands" aria-labelledby="cands-h" hidden>
+    <h2 id="cands-h">Matches</h2>
+    <ul id="cands-list" class="list" aria-label="Matches"></ul>
+  </section>
+
+  <section id="results" class="results" aria-labelledby="prod-name" hidden>
+    <div class="prod">
+      <h2 id="prod-name">Looking up</h2>
+      <p id="prod-meta" class="meta"></p>
+    </div>
+    <ul id="rows" class="list" aria-label="Shops"></ul>
+    <p id="prod-foot" class="foot"></p>
+  </section>
+</main>
+
+<div id="help" class="overlay" role="dialog" aria-modal="true" aria-labelledby="help-h" hidden>
+  <div class="sheet">
+    <div class="sec-head">
+      <h2 id="help-h">Keyboard shortcuts</h2>
+      <button type="button" id="help-close" class="link-btn">Close <kbd>Esc</kbd></button>
+    </div>
+    <dl class="keys">
+      <dt><kbd>/</kbd> <kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>Focus the search box</dd>
+      <dt><kbd>Enter</kbd></dt><dd>Search</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Clear the box, or go back from the results to the box</dd>
+      <dt><kbd>↑</kbd> <kbd>↓</kbd> in the box</dt><dd>Earlier searches, like shell history</dd>
+      <dt><kbd>Alt</kbd>+<kbd>1</kbd>..<kbd>4</kbd></dt><dd>Shop: Elkjøp, Komplett, Proshop, Power</dd>
+      <dt><kbd>Alt</kbd>+<kbd>T</kbd></dt><dd>Cycle the code type</dd>
+      <dt><kbd>Alt</kbd>+<kbd>P</kbd></dt><dd>Prisjakt on or off</dd>
+      <dt><kbd>↓</kbd> <kbd>↑</kbd> <kbd>j</kbd> <kbd>k</kbd></dt><dd>Move between rows or matches</dd>
+      <dt><kbd>Enter</kbd> <kbd>o</kbd></dt><dd>Open the shop page, or choose the match</dd>
+      <dt><kbd>c</kbd></dt><dd>Copy the price of the row</dd>
+      <dt><kbd>e</kbd></dt><dd>Copy the code</dd>
+      <dt><kbd>?</kbd></dt><dd>This help</dd>
+    </dl>
+  </div>
+</div>
+</body>
+</html>

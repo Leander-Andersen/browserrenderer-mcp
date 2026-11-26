@@ -18,6 +18,8 @@ import {
   capResult, resultText, injectRequired, stripSnapshotLinkResult, slimAnnotations, moreIndex, moreSchema, errorResult, textResult,
 } from './shape.mjs';
 import { PAGE_TEXT_DEF, PAGE_TEXT_NAME, MORE_NAME, moreDef, createBrowserTools, listedTool } from './browser.mjs';
+import { createUi } from './ui.mjs';
+import { createUiUpstream } from './ui-upstream.mjs';
 import { RETAIL_DEFS, RETAIL_NAMES, createRetailTools } from './retail.mjs';
 
 const INSTRUCTIONS =
@@ -48,6 +50,23 @@ const problem = smtpProblem(cfg.smtp);
 log(problem ? `alerts disabled: ${problem}` : 'alerts enabled');
 
 const UPSTREAM_URL = new URL(`http://127.0.0.1:${cfg.upstreamPort}/mcp`);
+
+// Price compare page: its own small pool of upstream sessions, separate from the public MCP sessions.
+const uiUpstream = createUiUpstream({
+  log,
+  connect: async () => {
+    const client = new Client({ name: 'browserrenderer-gateway-ui', version: VERSION });
+    await client.connect(new StreamableHTTPClientTransport(UPSTREAM_URL));
+    return {
+      callTool: (name, args, opts) => client.request({ method: 'tools/call', params: { name, arguments: args } }, CallToolResultSchema, { ...opts, resetTimeoutOnProgress: true }),
+      close: () => client.close(),
+    };
+  },
+});
+const ui = createUi({ ui: cfg.ui, upstream: uiUpstream, log });
+if (!cfg.ui.enabled) log('ui disabled (BRMCP_ACCESS_TEAM/BRMCP_ACCESS_AUD not set)');
+else if (cfg.ui.authOff) log('WARNING: ui auth is OFF (BRMCP_UI_AUTH=off, loopback only)');
+else log('ui enabled');
 const MAX_BODY = 4 * 1024 * 1024;
 const sessions = new Map(); // id -> session
 
@@ -267,6 +286,7 @@ const httpServer = http.createServer(async (req, res) => {
     if (!cfg.hostnames.includes(host)) return reply(res, 403, { error: 'forbidden host' });
 
     const url = new URL(req.url, 'http://x');
+    if (ui.owns(url.pathname)) return await ui.handle(req, res, url);
     if (url.pathname !== '/mcp') return reply(res, 404, { error: 'not found' });
     if (!['POST', 'GET', 'DELETE'].includes(req.method)) {
       return reply(res, 405, { error: 'method not allowed' }, { allow: 'GET, POST, DELETE' });
@@ -344,7 +364,7 @@ function shutdown() {
   log('shutting down');
   clearInterval(reaper);
   httpServer.close();
-  Promise.allSettled([...sessions.values()].map((s) => s.cleanup())).finally(() => process.exit(0));
+  Promise.allSettled([...sessions.values()].map((s) => s.cleanup()).concat(uiUpstream.closeAll())).finally(() => process.exit(0));
   setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on('SIGTERM', shutdown);

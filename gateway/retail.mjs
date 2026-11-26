@@ -515,11 +515,54 @@ export function formatCompare(ean, raw, mode, wantPrisjakt) {
   return lines.join('\n');
 }
 
+// ---- structured results (for the price compare page) ----
+
+const UI_STATUSES = new Set(['not_found', 'blocked', 'timeout', 'error']);
+const numOrNull = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : null);
+
+// Normalised product -> the plain object the page API serves (no specs, no description).
+export function uiProduct(p) {
+  return {
+    name: p.name || '', brand: p.brand || '', mpn: p.mpn || '', ean: p.ean || '', id: p.id || '',
+    price: numOrNull(p.price), before: numOrNull(p.before),
+    member: typeof p.member === 'number' || typeof p.member === 'boolean' ? p.member : null,
+    inStock: typeof p.inStock === 'boolean' ? p.inStock : null, stock: p.stock || null, url: p.url || '',
+  };
+}
+
+// Raw per-site result (from the browser run) -> { site, status, product? }.
+export function siteResult(site, s) {
+  if (!s || typeof s !== 'object') return { site, status: 'error' };
+  if (s.status !== 'ok') return { site, status: UI_STATUSES.has(s.status) ? s.status : 'error' };
+  const p = s.detail ? normalizeDetail(site, s.detail) : null;
+  return p ? { site, status: 'ok', product: uiProduct(p) } : { site, status: 'not_found' };
+}
+
+// Raw prisjakt result -> { low, shops, url } or null.
+export function prisjaktResult(pj) {
+  if (!pj || pj.status !== 'ok' || !pj.detail || typeof pj.detail.low !== 'number') return null;
+  const url = typeof pj.detail.url === 'string' && /^https:\/\/www\.prisjakt\.no\//.test(pj.detail.url) ? pj.detail.url : '';
+  return { low: pj.detail.low, shops: numOrNull(pj.detail.shops), url };
+}
+
+// Raw lookup of one site -> { product } | { candidates } | { status }.
+export function lookupResult(site, raw) {
+  const s = raw && raw.sites ? raw.sites[site] : null;
+  if (!s || s.status !== 'ok') return { status: s && UI_STATUSES.has(s.status) ? s.status : 'error' };
+  if (s.detail) {
+    const p = normalizeDetail(site, s.detail);
+    return p ? { product: uiProduct(p) } : { status: 'error' };
+  }
+  const items = (Array.isArray(s.items) ? s.items : []).map((i) => normalizeItem(site, i)).filter((i) => i && typeof i.price === 'number').slice(0, 5);
+  return items.length ? { candidates: items.map((i) => ({ id: i.id, name: i.name, price: i.price, before: i.before, url: i.url })) } : { status: 'not_found' };
+}
+
 // ---- tool handlers ----
 
+// One browser run for validated params -> { raw, rawTextChars } | { error, rawTextChars }.
 // callUpstream(name, args, extra) as in server.mjs; log(message) writes one gateway log line.
-export function createRetailTools(callUpstream, log = () => {}) {
-  async function run(params, extra) {
+export function createRetailRunner(callUpstream, log = () => {}) {
+  return async function run(params, extra) {
     const code = buildRetailCode(params);
     const res = await callUpstream('browser_run_code_unsafe', { code }, extra);
     const text = resultText(res);
@@ -531,7 +574,11 @@ export function createRetailTools(callUpstream, log = () => {}) {
     for (const [site, s] of Object.entries(obj.sites)) log(`retail site=${site} status=${s && s.status} ms=${s && s.ms}`);
     if (obj.prisjakt) log(`retail site=prisjakt status=${obj.prisjakt.status} ms=${obj.prisjakt.ms}`);
     return { raw: obj, rawTextChars: text.length };
-  }
+  };
+}
+
+export function createRetailTools(callUpstream, log = () => {}) {
+  const run = createRetailRunner(callUpstream, log);
 
   async function lookup(args, extra) {
     const v = validateLookup(args);
